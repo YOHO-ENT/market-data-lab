@@ -1,78 +1,254 @@
 groups:
-  core:
-  - SPY
-  - QQQ
-  - AAPL
-  - MSFT
-  - NVDA
-  - AVGO
-  - NFLX
-  healthcare:
-  - BSX
-  - AUPH
-  - MRK
-  - VRTX
-  - ISRG
-  - UNH
-  semis:
-  - NVDA
-  - AVGO
-  - TSM
-  - ASML
-  - MU
-  - SMCI
-  - AMD
-  - INTC
-  - QCOM
-  - ARM
-  - MRVL
-  software:
-  - MSFT
-  - PLTR
-  - ORCL
-  - DELL
-  - VRT
-  - CRM
-  - ADBE
-  - NOW
-  - SNOW
-  - CRWD
-  energy:
-  - XLE
-  - XOM
-  - CVX
-  - COP
-  - SLB
-  - LNG
-  - ENPH
-  - FSLR
-  - OKLO
-  crypto:
-  - BTC-USD
-  - ETH-USD
-  - SOL-USD
-  - COIN
-  - MSTR
-  etf:
+  us_indices:
   - SPY
   - QQQ
   - IWM
-  - DIA
-  - VTI
-  - VOO
-  - XLV
-  - XLE
-  - SMH
-  - IGV
-  ai_infrastructure:
-  - TSM
+  magnificent_7:
+  - MSFT
+  - NVDA
+  - GOOGL
+  - GOOG
+  - AMZN
+  - META
+  - TSLA
+  - AAPL
+  commodities:
+  - GLD
+  - SLV
+  - COPX
+  - USO
+  - URNM
+  - GLDM
+  agriculture:
+  - WEAT
+  - CORN
+  - CANE
+  semiconductors:
+  - SOXX
+  - 005930.KS
+  - NVTS
+  - SIVEF
+  - POET
+  - AXTI
+  - CDNS
+  - IBIDY
+  - 4062.T
+  - 285A.T
+  - KXIAY
+  - 000660.KS
+  - TER
+  - TOELY
   - ASML
-  - MU
+  - TSM
   - SMCI
-  - PLTR
+  - AVGO
+  - MRVL
+  - COHR
+  - STX
+  - WDC
+  - AAOI
+  - LITE
+  - SMH
+  - SNDK
+  - MU
+  - DRAM
+  - 3119.HK
+  ai_cloud_software:
   - ORCL
+  - IGV
+  - NFLX
+  - IBM
+  - TEAM
+  - CRM
+  - ZS
+  - ADBE
+  - DDOG
+  - MDB
+  - NOW
+  - PLTR
+  - SNOW
+  ai_data_center_networking:
   - DELL
+  - ANET
+  - CSCO
   - VRT
-  speculative:
+  - ETN
+  - CIEN
+  - NOK
+  - NBIS
+  - CRWV
+  quantum_computing:
+  - IONQ
+  - QBTS
+  - RGTI
+  space_defense_drones:
+  - SPCX
+  - SIDU
+  - RDW
+  - NOC
+  - LMT
+  - RKTO
+  - UMAC
+  - RCAT
+  - KTOS
+  - AVAV
+  - MARS
+  - UFO
+  - LUNR
+  - ASTS
   - RKLB
+  - NASA
+  robotics_autonomy:
+  - LASE
+  - PONY
+  - SYM
+  - SERV
+  - ONDS
+  energy_power_nuclear:
+  - LTBR
+  - FLNC
+  - TE
+  - BTU
+  - NNE
+  - VST
+  - LEU
+  - UUUU
+  - CCJ
+  - GRID
+  - CEG
+  - SMR
   - OKLO
+  materials_mining:
+  - IPI
+  - MP
+  - FCX
+  - AA
+  - SND
+  - BHP
+  biotech_psychedelics:
+  - AUPH
+  - REPL
+  - SDGR
+  - ATAI
+  - CMPS
+  healthcare_medtech_pharma:
+  - BSX
+  - MRK
+  - UNH
+  - VRTX
+  - ISRG
+  crypto_bitcoin_infra:
+  - CYPH
+  - IREN
+  - CORZ
+  - WULF
+  fintech_brokers:
+  - BULL
+  - FUTU
+  core_etfs:
+  - VTI
+  - VXUS
+  - QQQM
+  - VOO
+  - VGS.AX
+  - BND
+  - SGOV
+  private_market_etfs:
+  - DXYZ
+  - XOVR
+  leveraged_single_stock_etfs:
+  - AVL
+  - NVTX
+  - RKLX
+  - AAOX
+  - MVLL
+  - METU
+  - ADBG
+  - NOWL
+  - ASTX
+  - SNXX
+  - DLLL
+  - TQQQ
+  - MUU
+  - AVXX
+  - KTUP
+  - CONL
+  - 7709.HK
+  - 7747.HK
+group_meta:
+  us_indices:
+    label: US Indices
+    tags:
+    - us_indices
+  magnificent_7:
+    label: Magnificent 7
+    tags:
+    - magnificent_7
+  commodities:
+    label: Commodities
+    tags:
+    - commodities
+  agriculture:
+    label: Agriculture
+    tags:
+    - agriculture
+  semiconductors:
+    label: Semiconductors
+    tags:
+    - semiconductors
+  ai_cloud_software:
+    label: AI, Cloud & Software
+    tags:
+    - ai_cloud_software
+  ai_data_center_networking:
+    label: AI Data Center & Networking
+    tags:
+    - ai_data_center_networking
+  quantum_computing:
+    label: Quantum Computing
+    tags:
+    - quantum_computing
+  space_defense_drones:
+    label: Space, Defense & Drones
+    tags:
+    - space_defense_drones
+  robotics_autonomy:
+    label: Robotics & Autonomy
+    tags:
+    - robotics_autonomy
+  energy_power_nuclear:
+    label: Energy, Power & Nuclear
+    tags:
+    - energy_power_nuclear
+  materials_mining:
+    label: Materials & Mining
+    tags:
+    - materials_mining
+  biotech_psychedelics:
+    label: Biotech & Psychedelics
+    tags:
+    - biotech_psychedelics
+  healthcare_medtech_pharma:
+    label: Healthcare, MedTech & Pharma
+    tags:
+    - healthcare_medtech_pharma
+  crypto_bitcoin_infra:
+    label: Crypto & Bitcoin Infrastructure
+    tags:
+    - crypto_bitcoin_infra
+  fintech_brokers:
+    label: Fintech & Brokers
+    tags:
+    - fintech_brokers
+  core_etfs:
+    label: Core ETFs
+    tags:
+    - core_etfs
+  private_market_etfs:
+    label: Private Market ETFs
+    tags:
+    - private_market_etfs
+  leveraged_single_stock_etfs:
+    label: Leveraged / Single-Stock ETFs
+    tags:
+    - leveraged_single_stock_etfs

@@ -1,11 +1,13 @@
-import { Copy, Plus, Trash2, Users } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Copy, FolderPlus, Plus, Users } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
   addUniverseTicker,
+  deleteUniverseGroup,
   deleteUniverseTicker,
   getUniverses,
+  replaceUniverseGroup,
 } from "../api/marketApi";
 import type { UniverseGroup } from "../model/types";
 
@@ -13,17 +15,12 @@ type LoadPhase = "idle" | "loading" | "ready" | "error";
 
 export function UniversesPage() {
   const [groups, setGroups] = useState<UniverseGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState("");
-  const [ticker, setTicker] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
+  const [tickerInputs, setTickerInputs] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<LoadPhase>("idle");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const selectedGroup = useMemo(
-    () => groups.find((group) => group.id === selectedGroupId) || groups[0] || null,
-    [groups, selectedGroupId],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -36,9 +33,6 @@ export function UniversesPage() {
         return;
       }
       setGroups(response);
-      setSelectedGroupId((current) =>
-        response.some((group) => group.id === current) ? current : response[0]?.id || "",
-      );
       setPhase("ready");
     }
 
@@ -58,32 +52,52 @@ export function UniversesPage() {
   async function reloadGroups(nextMessage?: string) {
     const response = await getUniverses();
     setGroups(response);
-    setSelectedGroupId((current) =>
-      response.some((group) => group.id === current) ? current : response[0]?.id || "",
-    );
     if (nextMessage) {
       setMessage(nextMessage);
     }
   }
 
-  async function handleAddTicker(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedGroup) {
+    const groupId = normalizeGroupId(newGroupName);
+    if (!groupId) {
+      setError("Enter a group name before creating it.");
       return;
     }
-    const normalizedTicker = ticker.trim().toUpperCase();
+    if (groups.some((group) => group.id === groupId)) {
+      setError(`${groupId} already exists.`);
+      return;
+    }
+
+    setBusyKey("create:group");
+    setError(null);
+    setMessage(null);
+    try {
+      await replaceUniverseGroup(groupId, []);
+      setNewGroupName("");
+      await reloadGroups(`${groupId} group created.`);
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleAddTicker(event: FormEvent<HTMLFormElement>, group: UniverseGroup) {
+    event.preventDefault();
+    const normalizedTicker = (tickerInputs[group.id] || "").trim().toUpperCase();
     if (!normalizedTicker) {
       setError("Enter a ticker before adding it to a universe.");
       return;
     }
 
-    setBusyKey(`add:${selectedGroup.id}`);
+    setBusyKey(`add:${group.id}`);
     setError(null);
     setMessage(null);
     try {
-      await addUniverseTicker(selectedGroup.id, normalizedTicker);
-      setTicker("");
-      await reloadGroups(`${normalizedTicker} added to ${selectedGroup.name}.`);
+      await addUniverseTicker(group.id, normalizedTicker);
+      setTickerInputs((current) => ({ ...current, [group.id]: "" }));
+      await reloadGroups(`${normalizedTicker} added to ${group.name}.`);
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
     } finally {
@@ -98,6 +112,29 @@ export function UniversesPage() {
     try {
       await deleteUniverseTicker(group.id, tickerToDelete);
       await reloadGroups(`${tickerToDelete} removed from ${group.name}.`);
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleDeleteGroup(group: UniverseGroup) {
+    if (!window.confirm(`Delete ${group.name}?`)) {
+      return;
+    }
+
+    setBusyKey(`delete-group:${group.id}`);
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteUniverseGroup(group.id);
+      setTickerInputs((current) => {
+        const next = { ...current };
+        delete next[group.id];
+        return next;
+      });
+      await reloadGroups(`${group.name} deleted.`);
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
     } finally {
@@ -138,43 +175,28 @@ export function UniversesPage() {
       {message ? <div className="success-banner">{message}</div> : null}
 
       <section className="universe-manager section-card">
-        <form className="universe-add-form" onSubmit={handleAddTicker}>
+        <form className="universe-create-form" onSubmit={handleCreateGroup}>
           <label className="control-field">
-            <span className="control-label">Group</span>
-            <select
-              aria-label="Universe group"
-              value={selectedGroup?.id || ""}
-              onChange={(event) => setSelectedGroupId(event.target.value)}
-              disabled={phase === "loading" || groups.length === 0}
-            >
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="control-field">
-            <span className="control-label">Ticker</span>
+            <span className="control-label">New group</span>
             <input
-              aria-label="Ticker to add"
-              value={ticker}
-              onChange={(event) => setTicker(event.target.value.toUpperCase())}
-              placeholder="AAPL"
-              disabled={!selectedGroup || busyKey !== null}
+              aria-label="New universe group"
+              value={newGroupName}
+              onChange={(event) => setNewGroupName(event.target.value)}
+              placeholder="ai_watch"
+              disabled={busyKey !== null}
             />
           </label>
           <button
             type="submit"
-            className="primary-action-button"
-            disabled={!selectedGroup || busyKey !== null}
+            className="secondary-action-button"
+            disabled={busyKey !== null}
           >
-            <Plus size={15} aria-hidden="true" />
-            Add ticker
+            <FolderPlus size={15} aria-hidden="true" />
+            Add group
           </button>
         </form>
 
-        <div className="universe-grid">
+        <div className="universe-list">
           {phase === "loading" || phase === "idle" ? (
             <div className="table-empty">Loading universes...</div>
           ) : groups.length > 0 ? (
@@ -183,8 +205,14 @@ export function UniversesPage() {
                 key={group.id}
                 group={group}
                 busyKey={busyKey}
+                tickerValue={tickerInputs[group.id] || ""}
+                onTickerChange={(nextValue) =>
+                  setTickerInputs((current) => ({ ...current, [group.id]: nextValue }))
+                }
+                onAddTicker={(event) => handleAddTicker(event, group)}
                 onCopy={() => handleCopy(group)}
-                onDelete={(tickerToDelete) => handleDeleteTicker(group, tickerToDelete)}
+                onDeleteGroup={() => handleDeleteGroup(group)}
+                onDeleteTicker={(tickerToDelete) => handleDeleteTicker(group, tickerToDelete)}
               />
             ))
           ) : (
@@ -199,55 +227,104 @@ export function UniversesPage() {
 function UniverseGroupCard({
   group,
   busyKey,
+  tickerValue,
+  onTickerChange,
+  onAddTicker,
   onCopy,
-  onDelete,
+  onDeleteGroup,
+  onDeleteTicker,
 }: {
   group: UniverseGroup;
   busyKey: string | null;
+  tickerValue: string;
+  onTickerChange: (value: string) => void;
+  onAddTicker: (event: FormEvent<HTMLFormElement>) => void;
   onCopy: () => void;
-  onDelete: (ticker: string) => void;
+  onDeleteGroup: () => void;
+  onDeleteTicker: (ticker: string) => void;
 }) {
   return (
-    <article className="universe-card">
+    <article className="universe-card universe-card-wide">
       <div className="universe-card-header">
-        <div>
+        <div className="universe-title-row">
           <h2>{group.name}</h2>
-          {group.description ? <p>{group.description}</p> : null}
+          <span className="universe-group-key mono">({group.id})</span>
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={`Copy ${group.name} tickers`}
-          title={`Copy ${group.name} tickers`}
-          onClick={onCopy}
-        >
-          <Copy size={16} aria-hidden="true" />
-        </button>
+        <div className="universe-card-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Copy ${group.name} tickers`}
+            title={`Copy ${group.name} tickers`}
+            onClick={onCopy}
+          >
+            <Copy size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="delete-group-button"
+            disabled={busyKey === `delete-group:${group.id}`}
+            onClick={onDeleteGroup}
+          >
+            Delete
+          </button>
+        </div>
       </div>
-      <div className="universe-card-meta">
-        <span className="mono">{group.tickers.length} tickers</span>
-        {group.updated_at ? <span>Updated {group.updated_at}</span> : null}
-        {group.source ? <span>{group.source}</span> : null}
-      </div>
+
       <div className="universe-ticker-list">
-        {group.tickers.map((ticker) => (
-          <div className="universe-ticker-row" key={ticker}>
-            <Link className="ticker-link mono" to={`/market/${encodeURIComponent(ticker)}`}>
-              {ticker}
-            </Link>
-            <button
-              type="button"
-              className="icon-button danger-button"
-              aria-label={`Delete ${ticker} from ${group.name}`}
-              title={`Delete ${ticker} from ${group.name}`}
-              disabled={busyKey === `delete:${group.id}:${ticker}`}
-              onClick={() => onDelete(ticker)}
-            >
-              <Trash2 size={15} aria-hidden="true" />
-            </button>
-          </div>
-        ))}
+        {group.tickers.length > 0 ? (
+          group.tickers.map((ticker) => (
+            <span className="universe-ticker-chip" key={ticker}>
+              <Link
+                className="ticker-link mono"
+                title={`Open ${ticker} chart`}
+                to={`/market/${encodeURIComponent(ticker)}`}
+              >
+                {ticker}
+              </Link>
+              <button
+                type="button"
+                className="chip-delete-button"
+                aria-label={`Delete ${ticker} from ${group.name}`}
+                title={`Delete ${ticker} from ${group.name}`}
+                disabled={busyKey === `delete:${group.id}:${ticker}`}
+                onClick={() => onDeleteTicker(ticker)}
+              >
+                x
+              </button>
+            </span>
+          ))
+        ) : (
+          <span className="universe-empty-note">No tickers yet.</span>
+        )}
       </div>
+
+      <form className="universe-card-add-form" onSubmit={onAddTicker}>
+        <input
+          aria-label={`Ticker to add to ${group.name}`}
+          value={tickerValue}
+          onChange={(event) => onTickerChange(event.target.value.toUpperCase())}
+          placeholder="Add ticker..."
+          disabled={busyKey !== null}
+        />
+        <button
+          type="submit"
+          className="secondary-action-button universe-card-add-button"
+          disabled={busyKey !== null}
+        >
+          <Plus size={15} aria-hidden="true" />
+          Add
+        </button>
+      </form>
     </article>
   );
+}
+
+function normalizeGroupId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
 }

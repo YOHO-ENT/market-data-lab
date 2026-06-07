@@ -27,6 +27,7 @@ from market_data_lab.services import (
     refresh_history,
     refresh_snapshots,
     remove_universe_ticker,
+    remove_universe_group,
     replace_universe_group,
     status_summary,
 )
@@ -124,6 +125,16 @@ async def post_universe_tickers(group: str, body: UniverseTickersRequest):
     try:
         return add_universe_tickers(group, body.tickers)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/universes/{group}")
+async def delete_universe_group(group: str):
+    try:
+        return remove_universe_group(group)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

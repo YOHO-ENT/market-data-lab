@@ -30,6 +30,11 @@ from market_data_lab.models import (
     normalize_ticker,
     normalize_tickers,
 )
+from market_data_lab.watchlist_sync import (
+    DEFAULT_FIRN_WATCHLIST_PATH,
+    DEFAULT_UNIVERSE_PATH,
+    sync_configs,
+)
 
 QUALITY_TYPES = (
     "missing_price",
@@ -437,8 +442,10 @@ def status_summary(*, verbose: bool = True) -> dict[str, Any]:
 def get_universes() -> dict[str, Any]:
     """Return configured universe groups with normalized ticker lists."""
 
+    _sync_universe_configs(prefer="newer")
     config = _load_universe_config(required=False)
     groups = _normalized_universe_groups(config.get("groups") or {})
+    group_meta = _normalized_group_meta(config.get("group_meta") or {}, groups)
     unique = normalize_tickers([ticker for group_tickers in groups.values() for ticker in group_tickers])
     return _json_clean(
         {
@@ -447,6 +454,7 @@ def get_universes() -> dict[str, Any]:
             "group_count": len(groups),
             "ticker_count": len(unique),
             "groups": groups,
+            "group_meta": group_meta,
         }
     )
 
@@ -460,6 +468,7 @@ def replace_universe_group(group: str, tickers: list[str]) -> dict[str, Any]:
     groups[group_name] = normalize_tickers([str(ticker) for ticker in tickers])
     config["groups"] = _normalized_universe_groups(groups)
     _write_universe_config(config)
+    _sync_universe_configs(prefer="universe")
     return _universe_group_payload(group_name, config["groups"][group_name])
 
 
@@ -474,6 +483,7 @@ def add_universe_tickers(group: str, tickers: list[str]) -> dict[str, Any]:
     groups[group_name] = normalize_tickers([*existing, *additions])
     config["groups"] = _normalized_universe_groups(groups)
     _write_universe_config(config)
+    _sync_universe_configs(prefer="universe")
     return _universe_group_payload(group_name, config["groups"][group_name])
 
 
@@ -491,12 +501,32 @@ def remove_universe_ticker(group: str, ticker: str) -> dict[str, Any]:
     groups[group_name] = [candidate for candidate in groups[group_name] if candidate != target]
     config["groups"] = groups
     _write_universe_config(config)
+    _sync_universe_configs(prefer="universe")
     return _universe_group_payload(group_name, groups[group_name])
+
+
+def remove_universe_group(group: str) -> dict[str, Any]:
+    """Remove one configured universe group."""
+
+    group_name = _normalize_group_name(group)
+    config = _load_universe_config(required=True)
+    groups = _normalized_universe_groups(config.get("groups") or {})
+    if group_name not in groups:
+        raise KeyError(f"Universe group not found: {group_name}")
+    groups.pop(group_name)
+    group_meta = dict(config.get("group_meta") or {})
+    group_meta.pop(group_name, None)
+    config["groups"] = groups
+    config["group_meta"] = group_meta
+    _write_universe_config(config)
+    _sync_universe_configs(prefer="universe")
+    return _json_clean({"status": "ok", "group": group_name, "groups": get_universes()["groups"]})
 
 
 def load_universe_tickers(group: str) -> list[str]:
     """Read ticker symbols for one configured universe group."""
 
+    _sync_universe_configs(prefer="newer")
     normalized_group = _normalize_group_name(group)
     groups = _load_universe_groups()
     if normalized_group not in groups:
@@ -509,6 +539,7 @@ def load_universe_tickers(group: str) -> list[str]:
 def load_all_universe_tickers() -> list[str]:
     """Read all configured universe ticker symbols in file order."""
 
+    _sync_universe_configs(prefer="newer")
     groups = _load_universe_groups()
     tickers: list[str] = []
     for group_tickers in groups.values():
@@ -570,6 +601,7 @@ def _load_universe_groups() -> dict[str, Any]:
 
 
 def _universe_groups_for_status() -> dict[str, list[str]]:
+    _sync_universe_configs(prefer="newer")
     try:
         groups = _load_universe_groups()
     except Exception:
@@ -602,6 +634,7 @@ def _write_universe_config(config: dict[str, Any]) -> None:
     groups = _normalized_universe_groups(config.get("groups") or {})
     payload = dict(config)
     payload["groups"] = groups
+    payload["group_meta"] = _normalized_group_meta(payload.get("group_meta") or {}, groups)
     UNIVERSE_PATH.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False)
     UNIVERSE_PATH.write_text(text, encoding="utf-8")
@@ -613,6 +646,46 @@ def _normalized_universe_groups(groups: dict[str, Any]) -> dict[str, list[str]]:
         group_name = _normalize_group_name(str(group))
         normalized[group_name] = normalize_tickers(_universe_ticker_values(tickers or []))
     return normalized
+
+
+def _normalized_group_meta(
+    group_meta: dict[str, Any],
+    groups: dict[str, list[str]],
+) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        raw = group_meta.get(group) if isinstance(group_meta, dict) else None
+        meta = raw if isinstance(raw, dict) else {}
+        tags = meta.get("tags") or [group]
+        if isinstance(tags, str):
+            tags = [tags]
+        try:
+            tag_values = [str(tag).strip().lower().replace(" ", "-") for tag in tags]
+        except TypeError:
+            tag_values = [group]
+        tag_values = [tag for tag in dict.fromkeys(tag_values) if tag]
+        normalized[group] = {
+            "label": str(meta.get("label") or group.replace("_", " ").title()),
+            "tags": tag_values or [group],
+        }
+    return normalized
+
+
+def _sync_universe_configs(*, prefer: str) -> None:
+    """Sync with Firn when operating on the real monorepo config files."""
+
+    universe_path = Path(UNIVERSE_PATH)
+    firn_path = DEFAULT_FIRN_WATCHLIST_PATH
+    # Isolated tests monkeypatch only UNIVERSE_PATH; do not mutate the real
+    # Firn watchlist unless both sides are explicitly pointed at temp files.
+    if (
+        universe_path.resolve() != DEFAULT_UNIVERSE_PATH.resolve()
+        and firn_path.resolve() == DEFAULT_FIRN_WATCHLIST_PATH.resolve()
+    ):
+        return
+    if not universe_path.exists() and not firn_path.exists():
+        return
+    sync_configs(prefer=prefer, universe_path=universe_path, watchlist_path=firn_path)
 
 
 def _universe_ticker_values(tickers: Any) -> list[str]:

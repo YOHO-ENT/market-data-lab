@@ -131,7 +131,7 @@ export async function getTickerChart(
   }
 }
 
-export async function getDashboardSnapshots(limit = 80): Promise<DashboardData> {
+export async function getDashboardSnapshots(limit = 200): Promise<DashboardData> {
   if (inFlightDashboardSnapshots?.limit === limit) {
     return inFlightDashboardSnapshots.promise;
   }
@@ -181,6 +181,21 @@ export async function addUniverseTicker(
   );
 }
 
+export async function replaceUniverseGroup(
+  groupId: string,
+  tickers: string[] = [],
+): Promise<void> {
+  await requestJson<unknown>(
+    `/api/universes/${encodeURIComponent(groupId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        tickers: tickers.map((item) => item.trim().toUpperCase()).filter(Boolean),
+      }),
+    },
+  );
+}
+
 export async function deleteUniverseTicker(
   groupId: string,
   ticker: string,
@@ -189,6 +204,13 @@ export async function deleteUniverseTicker(
     `/api/universes/${encodeURIComponent(groupId)}/tickers/${encodeURIComponent(
       ticker.trim().toUpperCase(),
     )}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function deleteUniverseGroup(groupId: string): Promise<void> {
+  await requestJson<unknown>(
+    `/api/universes/${encodeURIComponent(groupId)}`,
     { method: "DELETE" },
   );
 }
@@ -430,12 +452,12 @@ function normalizeUniverseGroups(payload: unknown): UniverseGroup[] {
     return [];
   }
 
-  for (const field of UNIVERSE_GROUP_FIELDS) {
-    const value = payload[field];
-    const groups = normalizeUniverseGroups(value);
-    if (groups.length > 0) {
-      return groups;
-    }
+  const groupedValue = readFirstRecord(payload, UNIVERSE_GROUP_FIELDS);
+  if (groupedValue) {
+    const meta = isRecord(payload.group_meta) ? payload.group_meta : {};
+    return Object.entries(groupedValue)
+      .flatMap(([key, value]) => normalizeUniverseGroup(value, key, meta[key]))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   return Object.entries(payload)
@@ -443,12 +465,22 @@ function normalizeUniverseGroups(payload: unknown): UniverseGroup[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function normalizeUniverseGroup(value: unknown, fallbackId: string): UniverseGroup[] {
+function normalizeUniverseGroup(
+  value: unknown,
+  fallbackId: string,
+  metaValue?: unknown,
+): UniverseGroup[] {
+  const meta = isRecord(metaValue) ? metaValue : {};
   if (Array.isArray(value)) {
     const tickers = normalizeTickerList(value);
-    return tickers.length > 0
-      ? [{ id: fallbackId, name: startCase(fallbackId), tickers }]
-      : [];
+    return [
+      {
+        id: fallbackId,
+        name: readFirstString(meta, ["name", "label", "title"]) || startCase(fallbackId),
+        tickers,
+        description: readFirstString(meta, ["description", "summary"]),
+      },
+    ];
   }
 
   if (!isRecord(value)) {
@@ -456,18 +488,19 @@ function normalizeUniverseGroup(value: unknown, fallbackId: string): UniverseGro
   }
 
   const tickers = readTickerListFromRecord(value);
-  if (tickers.length === 0) {
-    return [];
-  }
-
   const id = readFirstString(value, ["id", "key", "slug", "name", "label"]) || fallbackId;
-  const name = readFirstString(value, ["name", "label", "title"]) || startCase(fallbackId);
+  const name =
+    readFirstString(value, ["name", "label", "title"]) ||
+    readFirstString(meta, ["name", "label", "title"]) ||
+    startCase(fallbackId);
   return [
     {
       id,
       name,
       tickers,
-      description: readFirstString(value, ["description", "summary"]),
+      description:
+        readFirstString(value, ["description", "summary"]) ||
+        readFirstString(meta, ["description", "summary"]),
       updated_at: readFirstString(value, ["updated_at", "modified_at"]) || null,
       source: readFirstString(value, ["source"]),
     },
@@ -628,6 +661,19 @@ function readFirstList(record: unknown, fields: string[]): unknown[] | null {
   for (const field of fields) {
     if (Array.isArray(record[field])) {
       return record[field];
+    }
+  }
+  return null;
+}
+
+function readFirstRecord(
+  record: Record<string, unknown>,
+  fields: string[],
+): Record<string, unknown> | null {
+  for (const field of fields) {
+    const value = record[field];
+    if (isRecord(value)) {
+      return value;
     }
   }
   return null;

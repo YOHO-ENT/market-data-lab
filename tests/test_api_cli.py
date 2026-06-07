@@ -13,6 +13,7 @@ from market_data_lab import cli, services
 from market_data_lab.api.app import app
 from market_data_lab.models import RefreshResponse, RefreshTickerResult
 from market_data_lab.storage import ParquetPriceStore
+from market_data_lab.watchlist_sync import sync_configs
 
 
 def standard_frame(dates: list[str], closes: list[float] | None = None) -> pd.DataFrame:
@@ -228,8 +229,8 @@ def test_status_reports_cache_tickers_latest_stale_and_snapshots(
     assert data["snapshots"] == 1
     assert data["snapshot_count"] == 1
     assert data["snapshot_tickers"] == ["BSX"]
-    assert "healthcare" in data["groups"]
-    assert "BSX" in data["groups"]["healthcare"]
+    assert "healthcare_medtech_pharma" in data["groups"]
+    assert "BSX" in data["groups"]["healthcare_medtech_pharma"]
     assert "NaN" not in json.dumps(data, allow_nan=False)
 
 
@@ -379,10 +380,62 @@ def test_universe_api_mutates_config_with_normalized_deduped_tickers(
     assert response.status_code == 200
     assert response.json()["tickers"] == ["AAPL", "BRK.B", "MSFT"]
 
+    response = client.delete("/universes/watch")
+    assert response.status_code == 200
+    assert "watch" not in response.json()["groups"]
+
     saved = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
     assert saved["groups"]["core"] == ["SPY", "BTC-USD"]
-    assert saved["groups"]["watch"] == ["AAPL", "BRK.B", "MSFT"]
+    assert "watch" not in saved["groups"]
     assert "NaN" not in json.dumps(response.json(), allow_nan=False)
+
+
+def test_watchlist_universe_sync_is_bidirectional(tmp_path: Path) -> None:
+    universe_path = tmp_path / "market-data-lab" / "config" / "universe.yaml"
+    watchlist_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    watchlist_path.parent.mkdir(parents=True)
+    watchlist_path.write_text(
+        yaml.safe_dump(
+            {
+                "categories": {
+                    "semiconductors": {
+                        "label": "Semiconductors",
+                        "tags": ["semiconductors", "ai-hardware"],
+                        "tickers": ["nvda", "NVDA", "mrvl"],
+                    }
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    winner = sync_configs(
+        prefer="watchlist",
+        universe_path=universe_path,
+        watchlist_path=watchlist_path,
+    )
+
+    assert winner == "watchlist"
+    universe = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
+    assert universe["groups"]["semiconductors"] == ["NVDA", "MRVL"]
+    assert universe["group_meta"]["semiconductors"] == {
+        "label": "Semiconductors",
+        "tags": ["semiconductors", "ai-hardware"],
+    }
+
+    universe["groups"]["semiconductors"].append("AVGO")
+    universe_path.write_text(yaml.safe_dump(universe, sort_keys=False), encoding="utf-8")
+    winner = sync_configs(
+        prefer="universe",
+        universe_path=universe_path,
+        watchlist_path=watchlist_path,
+    )
+
+    assert winner == "universe"
+    watchlist = yaml.safe_load(watchlist_path.read_text(encoding="utf-8"))
+    assert watchlist["categories"]["semiconductors"]["tickers"] == ["NVDA", "MRVL", "AVGO"]
+    assert watchlist["categories"]["semiconductors"]["tags"] == ["semiconductors", "ai-hardware"]
 
 
 def test_refresh_api_writes_lists_and_gets_run_logs(
@@ -513,11 +566,11 @@ def test_cli_refresh_universe_reads_config_and_dedupes_without_network(
         )
 
     monkeypatch.setattr(cli, "refresh_history", fake_refresh_history)
-    monkeypatch.setattr(sys, "argv", ["market-data", "refresh", "--universe", "healthcare", "BSX"])
+    monkeypatch.setattr(sys, "argv", ["market-data", "refresh", "--universe", "healthcare_medtech_pharma", "BSX"])
 
     cli.main()
 
-    assert captured["tickers"] == ["BSX", "AUPH", "MRK", "VRTX", "ISRG", "UNH"]
+    assert captured["tickers"] == ["BSX", "MRK", "UNH", "VRTX", "ISRG"]
     assert "Refresh complete" in capsys.readouterr().out
 
 
@@ -546,8 +599,9 @@ def test_cli_refresh_all_reads_every_universe_group_and_dedupes(
     cli.main()
 
     tickers = captured["tickers"]
-    assert tickers[:7] == ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AVGO", "NFLX"]
-    assert "BTC-USD" in tickers
+    assert tickers[:3] == ["SPY", "QQQ", "IWM"]
+    assert "AAPL" in tickers
+    assert "NFLX" in tickers
     assert "SMH" in tickers
     assert "RKLB" in tickers
     assert tickers.count("SPY") == 1
@@ -662,7 +716,16 @@ def test_universe_config_has_v12_groups_and_preserves_existing_tickers() -> None
     data = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "universe.yaml").read_text())
     groups = data["groups"]
 
-    assert {"core", "healthcare", "semis", "software", "energy", "crypto", "etf"}.issubset(groups)
+    assert {
+        "us_indices",
+        "healthcare_medtech_pharma",
+        "semiconductors",
+        "ai_cloud_software",
+        "energy_power_nuclear",
+        "crypto_bitcoin_infra",
+        "core_etfs",
+    }.issubset(groups)
+    assert set(groups) == set(data["group_meta"])
     configured = {ticker for tickers in groups.values() for ticker in tickers}
     for ticker in {
         "SPY",
@@ -690,4 +753,5 @@ def test_universe_config_has_v12_groups_and_preserves_existing_tickers() -> None
         "OKLO",
     }:
         assert ticker in configured
-    assert "BTC-USD" in groups["crypto"]
+    assert "MRVL" in groups["semiconductors"]
+    assert data["group_meta"]["semiconductors"]["label"] == "Semiconductors"
