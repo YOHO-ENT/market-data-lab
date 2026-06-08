@@ -159,6 +159,13 @@ export interface UniverseGroup {
   source?: string;
 }
 
+export interface UniverseResponse {
+  groups: UniverseGroup[];
+  editable: boolean;
+  managed_by?: string;
+  message?: string;
+}
+
 export interface RunIssue {
   id: string;
   ticker?: string;

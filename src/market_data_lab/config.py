@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +19,20 @@ DEFAULT_INTERVAL = "1d"
 DEFAULT_BENCHMARK = "SPY"
 DEFAULT_CHART_RANGE = "1y"
 STALE_PRICE_MAX_AGE_DAYS = 7
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+MOOMOO_ACCOUNT_WEB_URL = os.getenv("MOOMOO_ACCOUNT_WEB_URL", "http://127.0.0.1:8501")
+MOOMOO_EXPORT_HOST = os.getenv("MOOMOO_EXPORT_HOST", "127.0.0.1")
+MOOMOO_EXPORT_PORT = int(os.getenv("MOOMOO_EXPORT_PORT", "11111"))
+MOOMOO_EXPORT_MARKET = os.getenv("MOOMOO_EXPORT_MARKET", "US")
+MOOMOO_EXPORT_GROUP_TYPE = os.getenv("MOOMOO_EXPORT_GROUP_TYPE", "CUSTOM")
+MARKET_DATA_UNIVERSE_EDITABLE = _env_flag("MARKET_DATA_UNIVERSE_EDITABLE", False)
 
 SUPPORTED_CHART_RANGES: dict[str, int] = {
     "6mo": 126,

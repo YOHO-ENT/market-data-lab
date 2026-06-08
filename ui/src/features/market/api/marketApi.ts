@@ -10,6 +10,7 @@ import type {
   TechnicalChart,
   TechnicalSnapshot,
   UniverseGroup,
+  UniverseResponse,
 } from "../model/types";
 
 const DEFAULT_SCREEN_DEFINITIONS = [
@@ -164,8 +165,19 @@ export async function getScreenViews(): Promise<ScreenView[]> {
 }
 
 export async function getUniverses(): Promise<UniverseGroup[]> {
+  const response = await getUniverseConfig();
+  return response.groups;
+}
+
+export async function getUniverseConfig(): Promise<UniverseResponse> {
   const payload = await requestJson<unknown>("/api/universes");
-  return normalizeUniverseGroups(payload);
+  const record = isRecord(payload) ? payload : null;
+  return {
+    groups: normalizeUniverseGroups(payload),
+    editable: readBoolean(record, "editable", false),
+    managed_by: readFirstString(record, ["managed_by", "source"]),
+    message: readFirstString(record, ["message", "summary", "description"]),
+  };
 }
 
 export async function addUniverseTicker(
@@ -456,13 +468,11 @@ function normalizeUniverseGroups(payload: unknown): UniverseGroup[] {
   if (groupedValue) {
     const meta = isRecord(payload.group_meta) ? payload.group_meta : {};
     return Object.entries(groupedValue)
-      .flatMap(([key, value]) => normalizeUniverseGroup(value, key, meta[key]))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .flatMap(([key, value]) => normalizeUniverseGroup(value, key, meta[key]));
   }
 
   return Object.entries(payload)
-    .flatMap(([key, value]) => normalizeUniverseGroup(value, key))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .flatMap(([key, value]) => normalizeUniverseGroup(value, key));
 }
 
 function normalizeUniverseGroup(
@@ -700,6 +710,24 @@ function readFirstString(record: Record<string, unknown> | null, fields: string[
     }
   }
   return undefined;
+}
+
+function readBoolean(
+  record: Record<string, unknown> | null,
+  field: string,
+  fallback: boolean,
+): boolean {
+  if (!record) {
+    return fallback;
+  }
+  const value = record[field];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+  }
+  return fallback;
 }
 
 function readFirstNumber(

@@ -1,12 +1,6 @@
-"""Bidirectional sync between Firn watchlist and Market Data Lab universe.
+"""One-way sync from Market Data Lab universe to Firn watchlist.
 
 The richer Firn shape is:
-
-    categories:
-      category_key:
-        label: Human Label
-        tags: [category_key]
-        tickers: [...]
 
 Market Data Lab keeps chart/cache groups plus optional metadata:
 
@@ -16,6 +10,14 @@ Market Data Lab keeps chart/cache groups plus optional metadata:
       category_key:
         label: Human Label
         tags: [category_key]
+
+Firn receives the richer watchlist shape:
+
+    categories:
+      category_key:
+        label: Human Label
+        tags: [category_key]
+        tickers: [...]
 """
 
 from __future__ import annotations
@@ -38,40 +40,23 @@ _GROUP_RE = re.compile(r"[^a-z0-9_]+")
 
 def sync_configs(
     *,
-    prefer: str = "newer",
+    prefer: str = "universe",
     universe_path: Path = DEFAULT_UNIVERSE_PATH,
     watchlist_path: Path = DEFAULT_FIRN_WATCHLIST_PATH,
 ) -> str:
-    """Synchronize config files and return the winning side.
+    """Synchronize Lab universe to Firn watchlist and return ``"universe"``.
 
-    ``prefer`` can be ``"newer"``, ``"universe"``, or ``"watchlist"``.
-    Missing counterpart files are created from the existing side.
+    Market Data Lab no longer accepts Firn as a source of truth. ``prefer`` is
+    kept for old callers, but only ``"universe"`` is accepted to avoid an
+    accidental Firn -> Lab overwrite.
     """
 
     universe_path = Path(universe_path)
     watchlist_path = Path(watchlist_path)
-    if prefer not in {"newer", "universe", "watchlist"}:
-        raise ValueError("prefer must be newer, universe, or watchlist")
-
-    if prefer == "watchlist":
-        sync_watchlist_to_universe(watchlist_path=watchlist_path, universe_path=universe_path)
-        return "watchlist"
-    if prefer == "universe":
-        sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=watchlist_path)
-        return "universe"
-
-    if watchlist_path.exists() and not universe_path.exists():
-        sync_watchlist_to_universe(watchlist_path=watchlist_path, universe_path=universe_path)
-        return "watchlist"
-    if universe_path.exists() and not watchlist_path.exists():
-        sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=watchlist_path)
-        return "universe"
-    if not universe_path.exists() or not watchlist_path.exists():
+    if prefer != "universe":
+        raise ValueError("Market Data Lab only supports universe -> Firn watchlist sync")
+    if not universe_path.exists():
         return "none"
-
-    if watchlist_path.stat().st_mtime >= universe_path.stat().st_mtime:
-        sync_watchlist_to_universe(watchlist_path=watchlist_path, universe_path=universe_path)
-        return "watchlist"
     sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=watchlist_path)
     return "universe"
 
@@ -81,6 +66,8 @@ def sync_watchlist_to_universe(
     watchlist_path: Path = DEFAULT_FIRN_WATCHLIST_PATH,
     universe_path: Path = DEFAULT_UNIVERSE_PATH,
 ) -> None:
+    """Legacy converter kept for tests/tools; runtime sync must not call this."""
+
     payload = _load_yaml(Path(watchlist_path))
     categories = normalize_watchlist_categories(payload.get("categories") or payload)
     groups: dict[str, list[str]] = {}

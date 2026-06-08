@@ -807,6 +807,13 @@
   padding: 14px 16px;
 }
 
+.status-banner {
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  padding: 16px 20px;
+}
+
 .universe-create-form {
   display: grid;
   grid-template-columns: minmax(220px, 360px) auto;

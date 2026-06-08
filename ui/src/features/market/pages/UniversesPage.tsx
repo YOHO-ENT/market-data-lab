@@ -6,7 +6,7 @@ import {
   addUniverseTicker,
   deleteUniverseGroup,
   deleteUniverseTicker,
-  getUniverses,
+  getUniverseConfig,
   replaceUniverseGroup,
 } from "../api/marketApi";
 import type { UniverseGroup } from "../model/types";
@@ -20,6 +20,8 @@ export function UniversesPage() {
   const [phase, setPhase] = useState<LoadPhase>("idle");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [managedMessage, setManagedMessage] = useState("Managed by Moomoo. Run moomoo-sync to update.");
+  const [editable, setEditable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,11 +30,13 @@ export function UniversesPage() {
     async function loadGroups() {
       setPhase("loading");
       setError(null);
-      const response = await getUniverses();
+      const response = await getUniverseConfig();
       if (cancelled) {
         return;
       }
-      setGroups(response);
+      setGroups(response.groups);
+      setEditable(response.editable);
+      setManagedMessage(response.message || "Managed by Moomoo. Run moomoo-sync to update.");
       setPhase("ready");
     }
 
@@ -50,8 +54,10 @@ export function UniversesPage() {
   }, []);
 
   async function reloadGroups(nextMessage?: string) {
-    const response = await getUniverses();
-    setGroups(response);
+    const response = await getUniverseConfig();
+    setGroups(response.groups);
+    setEditable(response.editable);
+    setManagedMessage(response.message || "Managed by Moomoo. Run moomoo-sync to update.");
     if (nextMessage) {
       setMessage(nextMessage);
     }
@@ -161,7 +167,7 @@ export function UniversesPage() {
         <div>
           <div className="eyebrow">Universes</div>
           <h1>Configured ticker groups</h1>
-          <p>Add, remove, and copy local universe members without starting a data refresh.</p>
+          <p>{editable ? "Add, remove, and copy local universe members without starting a data refresh." : managedMessage}</p>
         </div>
         <div className="screen-header-meta">
           <Users size={16} aria-hidden="true" />
@@ -175,26 +181,30 @@ export function UniversesPage() {
       {message ? <div className="success-banner">{message}</div> : null}
 
       <section className="universe-manager section-card">
-        <form className="universe-create-form" onSubmit={handleCreateGroup}>
-          <label className="control-field">
-            <span className="control-label">New group</span>
-            <input
-              aria-label="New universe group"
-              value={newGroupName}
-              onChange={(event) => setNewGroupName(event.target.value)}
-              placeholder="ai_watch"
+        {editable ? (
+          <form className="universe-create-form" onSubmit={handleCreateGroup}>
+            <label className="control-field">
+              <span className="control-label">New group</span>
+              <input
+                aria-label="New universe group"
+                value={newGroupName}
+                onChange={(event) => setNewGroupName(event.target.value)}
+                placeholder="ai_watch"
+                disabled={busyKey !== null}
+              />
+            </label>
+            <button
+              type="submit"
+              className="secondary-action-button"
               disabled={busyKey !== null}
-            />
-          </label>
-          <button
-            type="submit"
-            className="secondary-action-button"
-            disabled={busyKey !== null}
-          >
-            <FolderPlus size={15} aria-hidden="true" />
-            Add group
-          </button>
-        </form>
+            >
+              <FolderPlus size={15} aria-hidden="true" />
+              Add group
+            </button>
+          </form>
+        ) : (
+          <div className="status-banner">{managedMessage}</div>
+        )}
 
         <div className="universe-list">
           {phase === "loading" || phase === "idle" ? (
@@ -206,6 +216,7 @@ export function UniversesPage() {
                 group={group}
                 busyKey={busyKey}
                 tickerValue={tickerInputs[group.id] || ""}
+                editable={editable}
                 onTickerChange={(nextValue) =>
                   setTickerInputs((current) => ({ ...current, [group.id]: nextValue }))
                 }
@@ -228,6 +239,7 @@ function UniverseGroupCard({
   group,
   busyKey,
   tickerValue,
+  editable,
   onTickerChange,
   onAddTicker,
   onCopy,
@@ -237,6 +249,7 @@ function UniverseGroupCard({
   group: UniverseGroup;
   busyKey: string | null;
   tickerValue: string;
+  editable: boolean;
   onTickerChange: (value: string) => void;
   onAddTicker: (event: FormEvent<HTMLFormElement>) => void;
   onCopy: () => void;
@@ -260,14 +273,16 @@ function UniverseGroupCard({
           >
             <Copy size={16} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className="delete-group-button"
-            disabled={busyKey === `delete-group:${group.id}`}
-            onClick={onDeleteGroup}
-          >
-            Delete
-          </button>
+          {editable ? (
+            <button
+              type="button"
+              className="delete-group-button"
+              disabled={busyKey === `delete-group:${group.id}`}
+              onClick={onDeleteGroup}
+            >
+              Delete
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -282,16 +297,18 @@ function UniverseGroupCard({
               >
                 {ticker}
               </Link>
-              <button
-                type="button"
-                className="chip-delete-button"
-                aria-label={`Delete ${ticker} from ${group.name}`}
-                title={`Delete ${ticker} from ${group.name}`}
-                disabled={busyKey === `delete:${group.id}:${ticker}`}
-                onClick={() => onDeleteTicker(ticker)}
-              >
-                x
-              </button>
+              {editable ? (
+                <button
+                  type="button"
+                  className="chip-delete-button"
+                  aria-label={`Delete ${ticker} from ${group.name}`}
+                  title={`Delete ${ticker} from ${group.name}`}
+                  disabled={busyKey === `delete:${group.id}:${ticker}`}
+                  onClick={() => onDeleteTicker(ticker)}
+                >
+                  x
+                </button>
+              ) : null}
             </span>
           ))
         ) : (
@@ -299,23 +316,25 @@ function UniverseGroupCard({
         )}
       </div>
 
-      <form className="universe-card-add-form" onSubmit={onAddTicker}>
-        <input
-          aria-label={`Ticker to add to ${group.name}`}
-          value={tickerValue}
-          onChange={(event) => onTickerChange(event.target.value.toUpperCase())}
-          placeholder="Add ticker..."
-          disabled={busyKey !== null}
-        />
-        <button
-          type="submit"
-          className="secondary-action-button universe-card-add-button"
-          disabled={busyKey !== null}
-        >
-          <Plus size={15} aria-hidden="true" />
-          Add
-        </button>
-      </form>
+      {editable ? (
+        <form className="universe-card-add-form" onSubmit={onAddTicker}>
+          <input
+            aria-label={`Ticker to add to ${group.name}`}
+            value={tickerValue}
+            onChange={(event) => onTickerChange(event.target.value.toUpperCase())}
+            placeholder="Add ticker..."
+            disabled={busyKey !== null}
+          />
+          <button
+            type="submit"
+            className="secondary-action-button universe-card-add-button"
+            disabled={busyKey !== null}
+          >
+            <Plus size={15} aria-hidden="true" />
+            Add
+          </button>
+        </form>
+      ) : null}
     </article>
   );
 }

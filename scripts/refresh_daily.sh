@@ -6,6 +6,9 @@ ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 cd "$ROOT"
 
+echo "== sync universe from moomoo account web =="
+uv run market-data moomoo-sync
+
 echo "== refresh all universes: 5y =="
 uv run market-data refresh --all --period 5y
 

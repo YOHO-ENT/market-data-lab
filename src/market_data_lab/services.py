@@ -16,6 +16,8 @@ import yaml
 from market_data_lab.config import (
     DEFAULT_BENCHMARK,
     DEFAULT_PERIOD,
+    MARKET_DATA_UNIVERSE_EDITABLE,
+    PROJECT_ROOT,
     REFRESH_RUN_DIR,
     SNAPSHOT_DIR,
     STALE_PRICE_MAX_AGE_DAYS,
@@ -30,10 +32,11 @@ from market_data_lab.models import (
     normalize_ticker,
     normalize_tickers,
 )
+from market_data_lab.moomoo_integration import preview_research_universe
 from market_data_lab.watchlist_sync import (
     DEFAULT_FIRN_WATCHLIST_PATH,
     DEFAULT_UNIVERSE_PATH,
-    sync_configs,
+    sync_universe_to_watchlist,
 )
 
 QUALITY_TYPES = (
@@ -442,7 +445,6 @@ def status_summary(*, verbose: bool = True) -> dict[str, Any]:
 def get_universes() -> dict[str, Any]:
     """Return configured universe groups with normalized ticker lists."""
 
-    _sync_universe_configs(prefer="newer")
     config = _load_universe_config(required=False)
     groups = _normalized_universe_groups(config.get("groups") or {})
     group_meta = _normalized_group_meta(config.get("group_meta") or {}, groups)
@@ -450,6 +452,13 @@ def get_universes() -> dict[str, Any]:
     return _json_clean(
         {
             "status": "ok",
+            "editable": MARKET_DATA_UNIVERSE_EDITABLE,
+            "managed_by": "moomoo",
+            "message": (
+                "Managed by Moomoo. Run moomoo-sync to update."
+                if not MARKET_DATA_UNIVERSE_EDITABLE
+                else "Manual universe editing is enabled."
+            ),
             "path": str(UNIVERSE_PATH),
             "group_count": len(groups),
             "ticker_count": len(unique),
@@ -462,19 +471,21 @@ def get_universes() -> dict[str, Any]:
 def replace_universe_group(group: str, tickers: list[str]) -> dict[str, Any]:
     """Create or replace one universe group."""
 
+    _ensure_universe_editable()
     group_name = _normalize_group_name(group)
     config = _load_universe_config(required=False)
     groups = dict(config.get("groups") or {})
     groups[group_name] = normalize_tickers([str(ticker) for ticker in tickers])
     config["groups"] = _normalized_universe_groups(groups)
     _write_universe_config(config)
-    _sync_universe_configs(prefer="universe")
+    _sync_universe_configs()
     return _universe_group_payload(group_name, config["groups"][group_name])
 
 
 def add_universe_tickers(group: str, tickers: list[str]) -> dict[str, Any]:
     """Add tickers to one universe group, preserving existing order."""
 
+    _ensure_universe_editable()
     group_name = _normalize_group_name(group)
     config = _load_universe_config(required=False)
     groups = dict(config.get("groups") or {})
@@ -483,13 +494,14 @@ def add_universe_tickers(group: str, tickers: list[str]) -> dict[str, Any]:
     groups[group_name] = normalize_tickers([*existing, *additions])
     config["groups"] = _normalized_universe_groups(groups)
     _write_universe_config(config)
-    _sync_universe_configs(prefer="universe")
+    _sync_universe_configs()
     return _universe_group_payload(group_name, config["groups"][group_name])
 
 
 def remove_universe_ticker(group: str, ticker: str) -> dict[str, Any]:
     """Remove one ticker from one universe group."""
 
+    _ensure_universe_editable()
     group_name = _normalize_group_name(group)
     target = normalize_ticker(ticker)
     config = _load_universe_config(required=True)
@@ -501,13 +513,14 @@ def remove_universe_ticker(group: str, ticker: str) -> dict[str, Any]:
     groups[group_name] = [candidate for candidate in groups[group_name] if candidate != target]
     config["groups"] = groups
     _write_universe_config(config)
-    _sync_universe_configs(prefer="universe")
+    _sync_universe_configs()
     return _universe_group_payload(group_name, groups[group_name])
 
 
 def remove_universe_group(group: str) -> dict[str, Any]:
     """Remove one configured universe group."""
 
+    _ensure_universe_editable()
     group_name = _normalize_group_name(group)
     config = _load_universe_config(required=True)
     groups = _normalized_universe_groups(config.get("groups") or {})
@@ -519,14 +532,13 @@ def remove_universe_group(group: str) -> dict[str, Any]:
     config["groups"] = groups
     config["group_meta"] = group_meta
     _write_universe_config(config)
-    _sync_universe_configs(prefer="universe")
+    _sync_universe_configs()
     return _json_clean({"status": "ok", "group": group_name, "groups": get_universes()["groups"]})
 
 
 def load_universe_tickers(group: str) -> list[str]:
     """Read ticker symbols for one configured universe group."""
 
-    _sync_universe_configs(prefer="newer")
     normalized_group = _normalize_group_name(group)
     groups = _load_universe_groups()
     if normalized_group not in groups:
@@ -539,7 +551,6 @@ def load_universe_tickers(group: str) -> list[str]:
 def load_all_universe_tickers() -> list[str]:
     """Read all configured universe ticker symbols in file order."""
 
-    _sync_universe_configs(prefer="newer")
     groups = _load_universe_groups()
     tickers: list[str] = []
     for group_tickers in groups.values():
@@ -596,12 +607,69 @@ def get_refresh_run(run_id: str) -> dict[str, Any]:
     return _json_clean(_read_refresh_run(path))
 
 
+def preview_moomoo_research_universe(**kwargs: Any) -> dict[str, Any]:
+    """Fetch and convert moomoo research universe without writing config files."""
+
+    return _json_clean(preview_research_universe(**_clean_moomoo_kwargs(kwargs)))
+
+
+def sync_moomoo_research_universe(
+    *,
+    sync_firn: bool = True,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Replace Lab universe from moomoo export and optionally push it to Firn."""
+
+    preview = preview_research_universe(**_clean_moomoo_kwargs(kwargs))
+    groups = preview.get("groups") or {}
+    group_meta = preview.get("group_meta") or {}
+    if not groups:
+        raise ValueError("moomoo research universe produced no mapped ticker groups")
+
+    config = {
+        "source": preview.get("source") or "moomoo-account-web",
+        "synced_at": preview.get("synced_at"),
+        "market": preview.get("market"),
+        "positions_status": preview.get("positions_status"),
+        "watchlists_status": preview.get("watchlists_status"),
+        "groups": groups,
+        "group_meta": group_meta,
+        "moomoo_sync": {
+            "item_count": preview.get("item_count", 0),
+            "mapped_count": preview.get("mapped_count", 0),
+            "unsupported_count": preview.get("unsupported_count", 0),
+            "invalid_count": preview.get("invalid_count", 0),
+            "skipped_items": preview.get("skipped_items", []),
+        },
+    }
+    _write_universe_config(config)
+
+    firn_synced = False
+    if sync_firn:
+        _sync_universe_configs()
+        firn_synced = True
+
+    return _json_clean(
+        {
+            **preview,
+            "status": "ok",
+            "synced": True,
+            "universe_path": str(UNIVERSE_PATH),
+            "firn_synced": firn_synced,
+            "firn_watchlist_path": str(DEFAULT_FIRN_WATCHLIST_PATH) if firn_synced else None,
+        }
+    )
+
+
 def _load_universe_groups() -> dict[str, Any]:
     return _load_universe_config(required=True).get("groups") or {}
 
 
+def _clean_moomoo_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
 def _universe_groups_for_status() -> dict[str, list[str]]:
-    _sync_universe_configs(prefer="newer")
     try:
         groups = _load_universe_groups()
     except Exception:
@@ -664,28 +732,38 @@ def _normalized_group_meta(
         except TypeError:
             tag_values = [group]
         tag_values = [tag for tag in dict.fromkeys(tag_values) if tag]
+        extra_meta = {
+            str(key): value
+            for key, value in meta.items()
+            if key not in {"label", "tags"}
+        }
         normalized[group] = {
+            **extra_meta,
             "label": str(meta.get("label") or group.replace("_", " ").title()),
             "tags": tag_values or [group],
         }
     return normalized
 
 
-def _sync_universe_configs(*, prefer: str) -> None:
-    """Sync with Firn when operating on the real monorepo config files."""
+def _sync_universe_configs() -> None:
+    """Sync Lab universe to Firn when operating on the real monorepo config files."""
 
     universe_path = Path(UNIVERSE_PATH)
     firn_path = DEFAULT_FIRN_WATCHLIST_PATH
+    real_universe_path = PROJECT_ROOT / "config" / "universe.yaml"
+    real_firn_path = PROJECT_ROOT.parent / "global-market-agent" / "config" / "digest_watchlist.yaml"
     # Isolated tests monkeypatch only UNIVERSE_PATH; do not mutate the real
     # Firn watchlist unless both sides are explicitly pointed at temp files.
-    if (
-        universe_path.resolve() != DEFAULT_UNIVERSE_PATH.resolve()
-        and firn_path.resolve() == DEFAULT_FIRN_WATCHLIST_PATH.resolve()
-    ):
+    if universe_path.resolve() != real_universe_path.resolve() and firn_path.resolve() == real_firn_path.resolve():
         return
     if not universe_path.exists() and not firn_path.exists():
         return
-    sync_configs(prefer=prefer, universe_path=universe_path, watchlist_path=firn_path)
+    sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=firn_path)
+
+
+def _ensure_universe_editable() -> None:
+    if not MARKET_DATA_UNIVERSE_EDITABLE:
+        raise PermissionError("Universe editing is disabled; use moomoo-sync to update groups")
 
 
 def _universe_ticker_values(tickers: Any) -> list[str]:

@@ -1,254 +1,442 @@
+source: moomoo-account-web
+synced_at: '2026-06-08T04:21:43+00:00'
+market: US
+positions_status: ok
+watchlists_status: ok
 groups:
-  us_indices:
-  - SPY
-  - QQQ
-  - IWM
-  magnificent_7:
-  - MSFT
+  moomoo_positions:
+  - NFLX
   - NVDA
-  - GOOGL
-  - GOOG
-  - AMZN
-  - META
-  - TSLA
-  - AAPL
-  commodities:
-  - GLD
-  - SLV
-  - COPX
-  - USO
-  - URNM
-  - GLDM
-  agriculture:
-  - WEAT
-  - CORN
-  - CANE
-  semiconductors:
-  - SOXX
-  - 005930.KS
-  - NVTS
-  - SIVEF
+  - 7709.HK
+  - AVAV
+  - ZS
   - POET
-  - AXTI
-  - CDNS
-  - IBIDY
-  - 4062.T
-  - 285A.T
-  - KXIAY
-  - 000660.KS
-  - TER
+  - NBIS
+  - AVGO
+  - VRT
+  - ETN
+  - SMR
+  - OKLO
+  - VST
+  - NNE
+  - LTBR
+  - CMPS
+  - BTU
+  - BSX
+  - ISRG
+  - NOK
+  - PONY
+  - AEO
+  moomoo_watchlist_to_buy:
+  - MUU
+  - MVLL
+  - NVTX
+  - ASTX
+  - AAOX
+  - NOWL
+  - ADBE
+  - DRAM
+  - SMH
+  - NASA
+  moomoo_watchlist_waitlist:
+  - NFLX
+  - METU
+  - IPI
+  moomoo_watchlist_watchlist:
+  - MUU
+  - FLNC
+  - SIVEF
+  - ORCL
+  - NFLX
+  - DLLL
+  - DELL
   - TOELY
   - ASML
   - TSM
-  - SMCI
-  - AVGO
-  - MRVL
-  - COHR
-  - STX
-  - WDC
-  - AAOI
-  - LITE
-  - SMH
-  - SNDK
+  - NVDA
+  moomoo_watchlist_ai_memory_storage:
   - MU
+  - MUU
   - DRAM
+  - SNDK
+  - SNXX
+  - WDC
+  - STX
+  - SMCI
+  - KXIAY
+  moomoo_watchlist_semiconductor:
+  - SMH
   - 3119.HK
-  ai_cloud_software:
-  - ORCL
+  - 7709.HK
+  moomoo_watchlist_space:
+  - NASA
+  - XOVR
+  - RKLB
+  - ASTS
+  - ASTX
+  - LUNR
+  - DXYZ
+  - UFO
+  - MARS
+  - RKTO
+  - RDW
+  - SIDU
+  moomoo_watchlist_drone:
+  - AVAV
+  - AVXX
+  - KTOS
+  - KTUP
+  - RCAT
+  - UMAC
+  - ONDS
+  moomoo_watchlist_software:
   - IGV
-  - NFLX
-  - IBM
-  - TEAM
-  - CRM
+  - CDNS
   - ZS
-  - ADBE
-  - DDOG
-  - MDB
-  - NOW
   - PLTR
   - SNOW
-  ai_data_center_networking:
-  - DELL
-  - ANET
-  - CSCO
-  - VRT
-  - ETN
+  - NOW
+  - NOWL
+  - MSFT
+  - MDB
+  - DDOG
+  - CRM
+  - ADBE
+  - ADBG
+  - TEAM
+  moomoo_watchlist_photonic:
+  - LITE
+  - AAOI
+  - AAOX
+  - COHR
   - CIEN
-  - NOK
+  - POET
+  moomoo_watchlist_data_center:
+  - MRVL
+  - MVLL
   - NBIS
-  - CRWV
-  quantum_computing:
-  - IONQ
-  - QBTS
-  - RGTI
-  space_defense_drones:
-  - SPCX
-  - SIDU
-  - RDW
-  - NOC
-  - LMT
-  - RKTO
-  - UMAC
-  - RCAT
-  - KTOS
-  - AVAV
-  - MARS
-  - UFO
-  - LUNR
-  - ASTS
-  - RKLB
-  - NASA
-  robotics_autonomy:
-  - LASE
-  - PONY
-  - SYM
-  - SERV
-  - ONDS
-  energy_power_nuclear:
-  - LTBR
-  - FLNC
-  - TE
-  - BTU
-  - NNE
-  - VST
-  - LEU
-  - UUUU
-  - CCJ
-  - GRID
-  - CEG
-  - SMR
-  - OKLO
-  materials_mining:
-  - IPI
-  - MP
-  - FCX
-  - AA
-  - SND
-  - BHP
-  biotech_psychedelics:
-  - AUPH
-  - REPL
-  - SDGR
-  - ATAI
-  - CMPS
-  healthcare_medtech_pharma:
-  - BSX
-  - MRK
-  - UNH
-  - VRTX
-  - ISRG
-  crypto_bitcoin_infra:
-  - CYPH
   - IREN
   - CORZ
   - WULF
-  fintech_brokers:
-  - BULL
-  - FUTU
-  core_etfs:
+  - CRWV
+  moomoo_watchlist_network_equipment:
+  - ANET
+  - AVGO
+  - MRVL
+  - CSCO
+  moomoo_watchlist_electricity:
+  - GRID
+  - TE
+  - VRT
+  - ETN
+  - CEG
+  - SMR
+  - OKLO
+  - CCJ
+  - LEU
+  - VST
+  - NNE
+  - LTBR
+  moomoo_watchlist_material:
+  - MP
+  - FCX
+  - AA
+  - UUUU
+  moomoo_watchlist_robot:
+  - TER
+  - BOTZ
+  - OUST
+  - TSLA
+  - SYM
+  - SERV
+  moomoo_watchlist_defense_military:
+  - NOC
+  - KTOS
+  - KTUP
+  - AVAV
+  - LMT
+  moomoo_watchlist_quantum_computing:
+  - IBM
+  - IONQ
+  - QBTS
+  - RGTI
+  moomoo_watchlist_biotech:
+  - CMPS
+  - REPL
+  - AUPH
+  - SDGR
+  - ATAI
+  - CYPH
+  moomoo_watchlist_coal:
+  - BTU
+  - ARLP
+  - CNR
+  moomoo_watchlist_pharmaceutical:
+  - BSX
+  - MRK
+  - ISRG
+  - AUPH
+  - VRTX
+  - UNH
+  - LLY
+  - XLV
+  moomoo_watchlist_hedge:
+  - UVIX
+  - SQQQ
+  - SOXS
+  moomoo_watchlist_etf:
+  - VOO
+  - QQQ
+  - DRAM
+  - SMH
+  - GRID
+  - NASA
+  moomoo_watchlist_magnificent_7:
+  - NVDA
+  - GOOG
+  - AAPL
+  - MSFT
+  - AMZN
+  - META
+  - TSLA
+  moomoo_watchlist_gpt_recommend:
   - VTI
   - VXUS
   - QQQM
-  - VOO
-  - VGS.AX
   - BND
   - SGOV
-  private_market_etfs:
-  - DXYZ
-  - XOVR
-  leveraged_single_stock_etfs:
-  - AVL
-  - NVTX
-  - RKLX
-  - AAOX
-  - MVLL
-  - METU
-  - ADBG
-  - NOWL
-  - ASTX
-  - SNXX
-  - DLLL
+  - GLDM
+  moomoo_watchlist_recommend:
+  - NOK
   - TQQQ
-  - MUU
-  - AVXX
-  - KTUP
-  - CONL
+  - VOO
+  - QQQ
+  - 3119.HK
   - 7709.HK
-  - 7747.HK
 group_meta:
-  us_indices:
-    label: US Indices
+  moomoo_positions:
+    label: Moomoo Positions
     tags:
-    - us_indices
-  magnificent_7:
-    label: Magnificent 7
+    - moomoo
+    - positions
+  moomoo_watchlist_to_buy:
+    source: watchlist:To buy
+    watchlist_name: To buy
+    group_order: 0
+    label: 'Moomoo Watchlist: To buy'
     tags:
-    - magnificent_7
-  commodities:
-    label: Commodities
+    - moomoo
+    - watchlist
+    - to_buy
+  moomoo_watchlist_waitlist:
+    source: watchlist:Waitlist
+    watchlist_name: Waitlist
+    group_order: 1
+    label: 'Moomoo Watchlist: Waitlist'
     tags:
-    - commodities
-  agriculture:
-    label: Agriculture
+    - moomoo
+    - watchlist
+    - waitlist
+  moomoo_watchlist_watchlist:
+    source: watchlist:Watchlist
+    watchlist_name: Watchlist
+    group_order: 2
+    label: 'Moomoo Watchlist: Watchlist'
     tags:
-    - agriculture
-  semiconductors:
-    label: Semiconductors
+    - moomoo
+    - watchlist
+  moomoo_watchlist_ai_memory_storage:
+    source: watchlist:AI memory/Storage
+    watchlist_name: AI memory/Storage
+    group_order: 3
+    label: 'Moomoo Watchlist: AI memory/Storage'
     tags:
-    - semiconductors
-  ai_cloud_software:
-    label: AI, Cloud & Software
+    - moomoo
+    - watchlist
+    - ai_memory_storage
+  moomoo_watchlist_semiconductor:
+    source: watchlist:Semiconductor
+    watchlist_name: Semiconductor
+    group_order: 4
+    label: 'Moomoo Watchlist: Semiconductor'
     tags:
-    - ai_cloud_software
-  ai_data_center_networking:
-    label: AI Data Center & Networking
+    - moomoo
+    - watchlist
+    - semiconductor
+  moomoo_watchlist_space:
+    source: watchlist:Space
+    watchlist_name: Space
+    group_order: 5
+    label: 'Moomoo Watchlist: Space'
     tags:
-    - ai_data_center_networking
-  quantum_computing:
-    label: Quantum Computing
+    - moomoo
+    - watchlist
+    - space
+  moomoo_watchlist_drone:
+    source: watchlist:Drone
+    watchlist_name: Drone
+    group_order: 6
+    label: 'Moomoo Watchlist: Drone'
     tags:
+    - moomoo
+    - watchlist
+    - drone
+  moomoo_watchlist_software:
+    source: watchlist:Software
+    watchlist_name: Software
+    group_order: 7
+    label: 'Moomoo Watchlist: Software'
+    tags:
+    - moomoo
+    - watchlist
+    - software
+  moomoo_watchlist_photonic:
+    source: watchlist:Photonic
+    watchlist_name: Photonic
+    group_order: 8
+    label: 'Moomoo Watchlist: Photonic'
+    tags:
+    - moomoo
+    - watchlist
+    - photonic
+  moomoo_watchlist_data_center:
+    source: watchlist:Data center
+    watchlist_name: Data center
+    group_order: 9
+    label: 'Moomoo Watchlist: Data center'
+    tags:
+    - moomoo
+    - watchlist
+    - data_center
+  moomoo_watchlist_network_equipment:
+    source: watchlist:Network equipment
+    watchlist_name: Network equipment
+    group_order: 10
+    label: 'Moomoo Watchlist: Network equipment'
+    tags:
+    - moomoo
+    - watchlist
+    - network_equipment
+  moomoo_watchlist_electricity:
+    source: watchlist:Electricity
+    watchlist_name: Electricity
+    group_order: 11
+    label: 'Moomoo Watchlist: Electricity'
+    tags:
+    - moomoo
+    - watchlist
+    - electricity
+  moomoo_watchlist_material:
+    source: watchlist:Material
+    watchlist_name: Material
+    group_order: 12
+    label: 'Moomoo Watchlist: Material'
+    tags:
+    - moomoo
+    - watchlist
+    - material
+  moomoo_watchlist_robot:
+    source: watchlist:Robot
+    watchlist_name: Robot
+    group_order: 13
+    label: 'Moomoo Watchlist: Robot'
+    tags:
+    - moomoo
+    - watchlist
+    - robot
+  moomoo_watchlist_defense_military:
+    source: watchlist:Defense/Military
+    watchlist_name: Defense/Military
+    group_order: 14
+    label: 'Moomoo Watchlist: Defense/Military'
+    tags:
+    - moomoo
+    - watchlist
+    - defense_military
+  moomoo_watchlist_quantum_computing:
+    source: watchlist:Quantum computing
+    watchlist_name: Quantum computing
+    group_order: 15
+    label: 'Moomoo Watchlist: Quantum computing'
+    tags:
+    - moomoo
+    - watchlist
     - quantum_computing
-  space_defense_drones:
-    label: Space, Defense & Drones
+  moomoo_watchlist_biotech:
+    source: watchlist:Biotech
+    watchlist_name: Biotech
+    group_order: 16
+    label: 'Moomoo Watchlist: Biotech'
     tags:
-    - space_defense_drones
-  robotics_autonomy:
-    label: Robotics & Autonomy
+    - moomoo
+    - watchlist
+    - biotech
+  moomoo_watchlist_coal:
+    source: watchlist:Coal
+    watchlist_name: Coal
+    group_order: 17
+    label: 'Moomoo Watchlist: Coal'
     tags:
-    - robotics_autonomy
-  energy_power_nuclear:
-    label: Energy, Power & Nuclear
+    - moomoo
+    - watchlist
+    - coal
+  moomoo_watchlist_pharmaceutical:
+    source: watchlist:Pharmaceutical
+    watchlist_name: Pharmaceutical
+    group_order: 18
+    label: 'Moomoo Watchlist: Pharmaceutical'
     tags:
-    - energy_power_nuclear
-  materials_mining:
-    label: Materials & Mining
+    - moomoo
+    - watchlist
+    - pharmaceutical
+  moomoo_watchlist_hedge:
+    source: watchlist:Hedge
+    watchlist_name: Hedge
+    group_order: 19
+    label: 'Moomoo Watchlist: Hedge'
     tags:
-    - materials_mining
-  biotech_psychedelics:
-    label: Biotech & Psychedelics
+    - moomoo
+    - watchlist
+    - hedge
+  moomoo_watchlist_etf:
+    source: watchlist:ETF
+    watchlist_name: ETF
+    group_order: 20
+    label: 'Moomoo Watchlist: ETF'
     tags:
-    - biotech_psychedelics
-  healthcare_medtech_pharma:
-    label: Healthcare, MedTech & Pharma
+    - moomoo
+    - watchlist
+    - etf
+  moomoo_watchlist_magnificent_7:
+    source: watchlist:Magnificent 7
+    watchlist_name: Magnificent 7
+    group_order: 21
+    label: 'Moomoo Watchlist: Magnificent 7'
     tags:
-    - healthcare_medtech_pharma
-  crypto_bitcoin_infra:
-    label: Crypto & Bitcoin Infrastructure
+    - moomoo
+    - watchlist
+    - magnificent_7
+  moomoo_watchlist_gpt_recommend:
+    source: watchlist:GPT Recommend
+    watchlist_name: GPT Recommend
+    group_order: 22
+    label: 'Moomoo Watchlist: GPT Recommend'
     tags:
-    - crypto_bitcoin_infra
-  fintech_brokers:
-    label: Fintech & Brokers
+    - moomoo
+    - watchlist
+    - gpt_recommend
+  moomoo_watchlist_recommend:
+    source: watchlist:Recommend
+    watchlist_name: Recommend
+    group_order: 23
+    label: 'Moomoo Watchlist: Recommend'
     tags:
-    - fintech_brokers
-  core_etfs:
-    label: Core ETFs
-    tags:
-    - core_etfs
-  private_market_etfs:
-    label: Private Market ETFs
-    tags:
-    - private_market_etfs
-  leveraged_single_stock_etfs:
-    label: Leveraged / Single-Stock ETFs
-    tags:
-    - leveraged_single_stock_etfs
+    - moomoo
+    - watchlist
+    - recommend
+moomoo_sync:
+  item_count: 137
+  mapped_count: 137
+  unsupported_count: 0
+  invalid_count: 0
+  skipped_items: []

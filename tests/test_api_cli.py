@@ -13,6 +13,7 @@ from market_data_lab import cli, services
 from market_data_lab.api.app import app
 from market_data_lab.models import RefreshResponse, RefreshTickerResult
 from market_data_lab.storage import ParquetPriceStore
+from market_data_lab.moomoo_integration import build_universe_from_export
 from market_data_lab.watchlist_sync import sync_configs
 
 
@@ -212,6 +213,13 @@ def test_status_reports_cache_tickers_latest_stale_and_snapshots(
     snapshot_dir.mkdir()
     (snapshot_dir / "BSX.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(services, "SNAPSHOT_DIR", snapshot_dir)
+    universe_path = tmp_path / "config" / "universe.yaml"
+    universe_path.parent.mkdir(exist_ok=True)
+    universe_path.write_text(
+        yaml.safe_dump({"groups": {"healthcare": ["BSX", "MRK"]}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
     client = TestClient(app)
 
     response = client.get("/status")
@@ -229,8 +237,7 @@ def test_status_reports_cache_tickers_latest_stale_and_snapshots(
     assert data["snapshots"] == 1
     assert data["snapshot_count"] == 1
     assert data["snapshot_tickers"] == ["BSX"]
-    assert "healthcare_medtech_pharma" in data["groups"]
-    assert "BSX" in data["groups"]["healthcare_medtech_pharma"]
+    assert data["groups"]["healthcare"] == ["BSX", "MRK"]
     assert "NaN" not in json.dumps(data, allow_nan=False)
 
 
@@ -361,6 +368,19 @@ def test_universe_api_mutates_config_with_normalized_deduped_tickers(
     response = client.get("/universes")
     assert response.status_code == 200
     assert response.json()["groups"]["core"] == ["SPY", "BTC-USD"]
+    assert response.json()["editable"] is False
+
+    response = client.put(
+        "/universes/watch",
+        json={"tickers": ["aapl"]},
+    )
+    assert response.status_code == 403
+
+    monkeypatch.setattr(services, "MARKET_DATA_UNIVERSE_EDITABLE", True)
+
+    response = client.get("/universes")
+    assert response.status_code == 200
+    assert response.json()["editable"] is True
 
     response = client.put(
         "/universes/watch",
@@ -390,10 +410,100 @@ def test_universe_api_mutates_config_with_normalized_deduped_tickers(
     assert "NaN" not in json.dumps(response.json(), allow_nan=False)
 
 
-def test_watchlist_universe_sync_is_bidirectional(tmp_path: Path) -> None:
+def moomoo_export_payload() -> dict:
+    return {
+        "source": "moomoo-account-web",
+        "status": "ok",
+        "synced_at": "2026-06-08T00:00:00+00:00",
+        "market": "US",
+        "positions_status": "ok",
+        "watchlists_status": "ok",
+        "items": [
+            {
+                "code": "US.NVDA",
+                "name": "NVIDIA",
+                "market_data_ticker": "NVDA",
+                "mapping_status": "mapped",
+                "held": True,
+                "universe_order": 0,
+                "watchlist_refs": [
+                    {"group_name": "AI Watch", "group_order": 1, "security_order": 1},
+                ],
+                "sources": ["positions", "watchlist:AI Watch"],
+            },
+            {
+                "code": "HK.00700",
+                "name": "Tencent",
+                "market_data_ticker": "0700.HK",
+                "mapping_status": "mapped",
+                "held": False,
+                "universe_order": 1,
+                "watchlist_refs": [
+                    {"group_name": "AI Watch", "group_order": 1, "security_order": 0},
+                    {"group_name": "Hong Kong", "group_order": 0, "security_order": 0},
+                ],
+                "sources": ["watchlist:AI Watch", "watchlist:Hong Kong"],
+            },
+            {
+                "code": "US.NVDA",
+                "name": "NVIDIA duplicate",
+                "market_data_ticker": "NVDA",
+                "mapping_status": "mapped",
+                "held": False,
+                "universe_order": 2,
+                "watchlist_refs": [
+                    {"group_name": "AI Watch", "group_order": 1, "security_order": 1},
+                ],
+                "sources": ["watchlist:AI Watch"],
+            },
+            {
+                "code": "AU.BHP",
+                "name": "BHP",
+                "market_data_ticker": None,
+                "mapping_status": "unsupported",
+                "held": False,
+                "sources": ["watchlist:Australia"],
+            },
+            {
+                "code": "BAD",
+                "name": "Bad",
+                "market_data_ticker": "BAD/TICKER",
+                "mapping_status": "mapped",
+                "held": False,
+                "sources": ["watchlist:Bad"],
+            },
+        ],
+    }
+
+
+def test_moomoo_export_builds_universe_groups_with_skipped_items() -> None:
+    result = build_universe_from_export(moomoo_export_payload())
+
+    assert result["status"] == "ok"
+    assert result["mapped_count"] == 3
+    assert result["unsupported_count"] == 1
+    assert result["invalid_count"] == 1
+    assert "moomoo_all" not in result["groups"]
+    assert result["groups"]["moomoo_positions"] == ["NVDA"]
+    assert list(result["groups"])[:3] == [
+        "moomoo_positions",
+        "moomoo_watchlist_hong_kong",
+        "moomoo_watchlist_ai_watch",
+    ]
+    assert result["groups"]["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]
+    assert result["groups"]["moomoo_watchlist_hong_kong"] == ["0700.HK"]
+    assert result["group_meta"]["moomoo_watchlist_ai_watch"]["label"] == "Moomoo Watchlist: AI Watch"
+    assert result["group_meta"]["moomoo_watchlist_hong_kong"]["group_order"] == 0
+    assert result["group_meta"]["moomoo_watchlist_ai_watch"]["group_order"] == 1
+    assert [item["reason"] for item in result["skipped_items"]] == ["unsupported", "invalid_ticker"]
+    assert "NaN" not in json.dumps(result, allow_nan=False)
+
+
+def test_watchlist_sync_only_allows_universe_to_firn(tmp_path: Path) -> None:
     universe_path = tmp_path / "market-data-lab" / "config" / "universe.yaml"
     watchlist_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
     watchlist_path.parent.mkdir(parents=True)
+    universe_path.parent.mkdir(parents=True)
     watchlist_path.write_text(
         yaml.safe_dump(
             {
@@ -409,23 +519,30 @@ def test_watchlist_universe_sync_is_bidirectional(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-
-    winner = sync_configs(
-        prefer="watchlist",
-        universe_path=universe_path,
-        watchlist_path=watchlist_path,
+    universe_path.write_text(
+        yaml.safe_dump(
+            {
+                "groups": {
+                    "semiconductors": ["nvda", "NVDA", "avgo"],
+                },
+                "group_meta": {
+                    "semiconductors": {
+                        "label": "Semiconductors",
+                        "tags": ["semiconductors", "ai-hardware"],
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
     )
 
-    assert winner == "watchlist"
-    universe = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
-    assert universe["groups"]["semiconductors"] == ["NVDA", "MRVL"]
-    assert universe["group_meta"]["semiconductors"] == {
-        "label": "Semiconductors",
-        "tags": ["semiconductors", "ai-hardware"],
-    }
+    with pytest.raises(ValueError):
+        sync_configs(prefer="watchlist", universe_path=universe_path, watchlist_path=watchlist_path)
 
-    universe["groups"]["semiconductors"].append("AVGO")
-    universe_path.write_text(yaml.safe_dump(universe, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ValueError):
+        sync_configs(prefer="newer", universe_path=universe_path, watchlist_path=watchlist_path)
+
     winner = sync_configs(
         prefer="universe",
         universe_path=universe_path,
@@ -433,9 +550,83 @@ def test_watchlist_universe_sync_is_bidirectional(tmp_path: Path) -> None:
     )
 
     assert winner == "universe"
+    universe = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
+    assert universe["groups"]["semiconductors"] == ["nvda", "NVDA", "avgo"]
     watchlist = yaml.safe_load(watchlist_path.read_text(encoding="utf-8"))
-    assert watchlist["categories"]["semiconductors"]["tickers"] == ["NVDA", "MRVL", "AVGO"]
+    assert watchlist["categories"]["semiconductors"]["tickers"] == ["NVDA", "AVGO"]
     assert watchlist["categories"]["semiconductors"]["tags"] == ["semiconductors", "ai-hardware"]
+
+
+def test_moomoo_preview_does_not_write_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+
+    result = services.preview_moomoo_research_universe()
+
+    assert "moomoo_all" not in result["groups"]
+    assert result["groups"]["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]
+    assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
+    assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
+
+
+def test_moomoo_sync_replaces_lab_universe_and_pushes_firn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+
+    result = services.sync_moomoo_research_universe()
+
+    saved = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
+    assert result["synced"] is True
+    assert result["firn_synced"] is True
+    assert set(saved["groups"]) == {
+        "moomoo_positions",
+        "moomoo_watchlist_ai_watch",
+        "moomoo_watchlist_hong_kong",
+    }
+    assert saved["groups"]["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]
+    assert "old" not in saved["groups"]
+    watchlist = yaml.safe_load(firn_path.read_text(encoding="utf-8"))
+    assert "moomoo_all" not in watchlist["categories"]
+    assert watchlist["categories"]["moomoo_positions"]["tickers"] == ["NVDA"]
+
+
+def test_moomoo_sync_error_does_not_write_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+
+    def fail_preview(**kwargs):
+        raise TimeoutError("moomoo unavailable")
+
+    monkeypatch.setattr(services, "preview_research_universe", fail_preview)
+
+    with pytest.raises(TimeoutError):
+        services.sync_moomoo_research_universe()
+
+    assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
+    assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
 
 
 def test_refresh_api_writes_lists_and_gets_run_logs(
@@ -524,10 +715,16 @@ def test_get_api_endpoints_do_not_call_fetcher(monkeypatch: pytest.MonkeyPatch, 
     universe_path = tmp_path / "config" / "universe.yaml"
     universe_path.parent.mkdir()
     universe_path.write_text(yaml.safe_dump({"groups": {"core": ["BSX"]}}), encoding="utf-8")
+    original_universe = universe_path.read_text(encoding="utf-8")
     monkeypatch.setattr(services, "SNAPSHOT_DIR", snapshot_dir)
     monkeypatch.setattr(services, "REFRESH_RUN_DIR", run_dir)
     monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
     monkeypatch.setattr(services, "_fetcher", fail_if_fetcher_called)
+    monkeypatch.setattr(
+        services,
+        "preview_research_universe",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("ordinary GET endpoints must not call moomoo")),
+    )
     client = TestClient(app)
 
     responses = [
@@ -544,10 +741,72 @@ def test_get_api_endpoints_do_not_call_fetcher(monkeypatch: pytest.MonkeyPatch, 
     ]
 
     assert [response.status_code for response in responses] == [200] * 10
+    assert universe_path.read_text(encoding="utf-8") == original_universe
+
+
+def test_moomoo_api_preview_and_sync(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+    client = TestClient(app)
+
+    response = client.get("/integrations/moomoo/research-universe/preview")
+    assert response.status_code == 200
+    preview_payload = response.json()
+    assert "moomoo_all" not in preview_payload["groups"]
+    assert preview_payload["groups"]["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]
+    assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
+
+    response = client.post("/integrations/moomoo/research-universe/sync", json={})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["firn_synced"] is True
+    saved_groups = yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"]
+    assert "moomoo_all" not in saved_groups
+    assert saved_groups["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]
+    firn_categories = yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]
+    assert "moomoo_all" not in firn_categories
+    assert firn_categories["moomoo_watchlist_ai_watch"]["tickers"] == ["0700.HK", "NVDA"]
+
+
+def test_moomoo_api_unavailable_returns_503_without_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(
+        services,
+        "preview_research_universe",
+        lambda **kwargs: (_ for _ in ()).throw(TimeoutError("moomoo unavailable")),
+    )
+    client = TestClient(app)
+
+    response = client.post("/integrations/moomoo/research-universe/sync", json={})
+
+    assert response.status_code == 503
+    assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
+    assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
 
 
 def test_cli_refresh_universe_reads_config_and_dedupes_without_network(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, list[str]] = {}
@@ -566,7 +825,14 @@ def test_cli_refresh_universe_reads_config_and_dedupes_without_network(
         )
 
     monkeypatch.setattr(cli, "refresh_history", fake_refresh_history)
-    monkeypatch.setattr(sys, "argv", ["market-data", "refresh", "--universe", "healthcare_medtech_pharma", "BSX"])
+    universe_path = tmp_path / "config" / "universe.yaml"
+    universe_path.parent.mkdir()
+    universe_path.write_text(
+        yaml.safe_dump({"groups": {"healthcare": ["bsx", "MRK", "UNH", "VRTX", "ISRG"]}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(sys, "argv", ["market-data", "refresh", "--universe", "healthcare", "BSX"])
 
     cli.main()
 
@@ -576,6 +842,7 @@ def test_cli_refresh_universe_reads_config_and_dedupes_without_network(
 
 def test_cli_refresh_all_reads_every_universe_group_and_dedupes(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, list[str]] = {}
@@ -594,6 +861,22 @@ def test_cli_refresh_all_reads_every_universe_group_and_dedupes(
         )
 
     monkeypatch.setattr(cli, "refresh_history", fake_refresh_history)
+    universe_path = tmp_path / "config" / "universe.yaml"
+    universe_path.parent.mkdir()
+    universe_path.write_text(
+        yaml.safe_dump(
+            {
+                "groups": {
+                    "indices": ["SPY", "QQQ", "IWM"],
+                    "growth": ["AAPL", "NFLX", "QQQ"],
+                    "themes": ["SMH", "RKLB"],
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
     monkeypatch.setattr(sys, "argv", ["market-data", "refresh", "--all"])
 
     cli.main()
@@ -698,6 +981,46 @@ def test_cli_quality_prints_compact_readable_report(
     assert "Missing Volume" not in output
 
 
+def test_cli_moomoo_preview_and_sync(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    preview_calls: list[dict] = []
+    sync_calls: list[dict] = []
+    result = build_universe_from_export(moomoo_export_payload())
+
+    def fake_preview(**kwargs):
+        preview_calls.append(kwargs)
+        return result
+
+    def fake_sync(**kwargs):
+        sync_calls.append(kwargs)
+        return {
+            **result,
+            "synced": True,
+            "universe_path": "/tmp/universe.yaml",
+            "firn_synced": kwargs["sync_firn"],
+        }
+
+    monkeypatch.setattr(cli, "preview_moomoo_research_universe", fake_preview)
+    monkeypatch.setattr(cli, "sync_moomoo_research_universe", fake_sync)
+
+    monkeypatch.setattr(sys, "argv", ["market-data", "moomoo-preview", "--market", "US"])
+    cli.main()
+    preview_output = capsys.readouterr().out
+    assert preview_calls[0]["market"] == "US"
+    assert "Moomoo preview: ok" in preview_output
+    assert "moomoo_watchlist_ai_watch: 2" in preview_output
+    assert "moomoo_all" not in preview_output
+
+    monkeypatch.setattr(sys, "argv", ["market-data", "moomoo-sync", "--no-firn"])
+    cli.main()
+    sync_output = capsys.readouterr().out
+    assert sync_calls[0]["sync_firn"] is False
+    assert "Moomoo sync: ok" in sync_output
+    assert "firn_synced=False" in sync_output
+
+
 def test_refresh_daily_script_exists_with_safe_refresh_workflow() -> None:
     path = Path(__file__).resolve().parents[1] / "scripts" / "refresh_daily.sh"
     script = path.read_text(encoding="utf-8")
@@ -706,52 +1029,22 @@ def test_refresh_daily_script_exists_with_safe_refresh_workflow() -> None:
     assert "set -euo pipefail" in script
     assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in script
     assert 'ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"' in script
+    assert "uv run market-data moomoo-sync" in script
     assert "uv run market-data refresh --all --period 5y" in script
     assert "uv run market-data status --verbose" in script
     assert "uv run market-data quality" in script
     assert path.stat().st_mode & 0o111
 
 
-def test_universe_config_has_v12_groups_and_preserves_existing_tickers() -> None:
+def test_universe_config_has_moomoo_groups_and_metadata() -> None:
     data = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "universe.yaml").read_text())
     groups = data["groups"]
 
-    assert {
-        "us_indices",
-        "healthcare_medtech_pharma",
-        "semiconductors",
-        "ai_cloud_software",
-        "energy_power_nuclear",
-        "crypto_bitcoin_infra",
-        "core_etfs",
-    }.issubset(groups)
+    assert "moomoo_all" not in groups
+    assert "moomoo_positions" in groups
     assert set(groups) == set(data["group_meta"])
     configured = {ticker for tickers in groups.values() for ticker in tickers}
-    for ticker in {
-        "SPY",
-        "QQQ",
-        "AAPL",
-        "MSFT",
-        "NVDA",
-        "AVGO",
-        "NFLX",
-        "BSX",
-        "AUPH",
-        "MRK",
-        "VRTX",
-        "ISRG",
-        "UNH",
-        "TSM",
-        "ASML",
-        "MU",
-        "SMCI",
-        "PLTR",
-        "ORCL",
-        "DELL",
-        "VRT",
-        "RKLB",
-        "OKLO",
-    }:
+    for ticker in {"AAPL", "MSFT", "NVDA", "BSX", "AVGO"}:
         assert ticker in configured
-    assert "MRVL" in groups["semiconductors"]
-    assert data["group_meta"]["semiconductors"]["label"] == "Semiconductors"
+    assert set(groups["moomoo_positions"]).issubset(configured)
+    assert data["group_meta"]["moomoo_positions"]["label"] == "Moomoo Positions"

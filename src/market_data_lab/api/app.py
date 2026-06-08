@@ -24,12 +24,14 @@ from market_data_lab.services import (
     get_snapshots,
     get_universes,
     list_refresh_runs,
+    preview_moomoo_research_universe,
     refresh_history,
     refresh_snapshots,
     remove_universe_ticker,
     remove_universe_group,
     replace_universe_group,
     status_summary,
+    sync_moomoo_research_universe,
 )
 
 app = FastAPI(title="Market Data Lab", version="0.1.0")
@@ -37,6 +39,16 @@ app = FastAPI(title="Market Data Lab", version="0.1.0")
 
 class UniverseTickersRequest(BaseModel):
     tickers: list[str] = Field(default_factory=list)
+
+
+class MoomooSyncRequest(BaseModel):
+    sync_firn: bool = True
+    base_url: str | None = None
+    host: str | None = None
+    port: int | None = None
+    market: str | None = None
+    group_type: str | None = None
+    timeout: float = 10.0
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -112,10 +124,53 @@ async def universes() -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/integrations/moomoo/research-universe/preview")
+async def moomoo_research_universe_preview(
+    base_url: str | None = Query(None),
+    host: str | None = Query(None),
+    port: int | None = Query(None),
+    market: str | None = Query(None),
+    group_type: str | None = Query(None),
+    timeout: float = Query(10.0, gt=0),
+) -> dict:
+    try:
+        return preview_moomoo_research_universe(
+            base_url=base_url,
+            host=host,
+            port=port,
+            market=market,
+            group_type=group_type,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/integrations/moomoo/research-universe/sync")
+async def moomoo_research_universe_sync(body: MoomooSyncRequest | None = None) -> dict:
+    body = body or MoomooSyncRequest()
+    try:
+        return sync_moomoo_research_universe(
+            sync_firn=body.sync_firn,
+            base_url=body.base_url,
+            host=body.host,
+            port=body.port,
+            market=body.market,
+            group_type=body.group_type,
+            timeout=body.timeout,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.put("/universes/{group}")
 async def put_universe_group(group: str, body: UniverseTickersRequest):
     try:
         return replace_universe_group(group, body.tickers)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -124,6 +179,8 @@ async def put_universe_group(group: str, body: UniverseTickersRequest):
 async def post_universe_tickers(group: str, body: UniverseTickersRequest):
     try:
         return add_universe_tickers(group, body.tickers)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -132,6 +189,8 @@ async def post_universe_tickers(group: str, body: UniverseTickersRequest):
 async def delete_universe_group(group: str):
     try:
         return remove_universe_group(group)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (FileNotFoundError, ValueError) as exc:
@@ -142,6 +201,8 @@ async def delete_universe_group(group: str):
 async def delete_universe_ticker(group: str, ticker: str):
     try:
         return remove_universe_ticker(group, ticker)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (FileNotFoundError, ValueError) as exc:

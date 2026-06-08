@@ -13,9 +13,11 @@ from market_data_lab.services import (
     get_chart,
     get_history,
     get_snapshot,
+    preview_moomoo_research_universe,
     refresh_history,
     resolve_refresh_tickers,
     status_summary,
+    sync_moomoo_research_universe,
 )
 
 RUN_SERVICE_FUNCTIONS = (
@@ -57,6 +59,13 @@ def main() -> None:
     runs = subparsers.add_parser("runs", help="Print recent refresh runs")
     runs.add_argument("--limit", type=_positive_int, default=5, help="Maximum runs to show")
 
+    moomoo_preview = subparsers.add_parser("moomoo-preview", help="Preview moomoo research universe sync")
+    _add_moomoo_args(moomoo_preview)
+
+    moomoo_sync = subparsers.add_parser("moomoo-sync", help="Replace Lab universe from moomoo export")
+    _add_moomoo_args(moomoo_sync)
+    moomoo_sync.add_argument("--no-firn", action="store_true", help="Do not push the synced universe to Firn")
+
     args = parser.parse_args()
 
     if args.command == "refresh":
@@ -97,6 +106,36 @@ def main() -> None:
     if args.command == "runs":
         print(format_runs_report(recent_refresh_runs(limit=args.limit)))
         return
+
+    if args.command == "moomoo-preview":
+        result = preview_moomoo_research_universe(**_moomoo_kwargs(args))
+        print(format_moomoo_sync_report(result, preview=True))
+        return
+
+    if args.command == "moomoo-sync":
+        result = sync_moomoo_research_universe(sync_firn=not args.no_firn, **_moomoo_kwargs(args))
+        print(format_moomoo_sync_report(result, preview=False))
+        return
+
+
+def _add_moomoo_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--base-url", help="Moomoo Account Web base URL")
+    parser.add_argument("--host", help="OpenD host passed through to moomoo export")
+    parser.add_argument("--port", type=int, help="OpenD port passed through to moomoo export")
+    parser.add_argument("--market", help="Moomoo market filter")
+    parser.add_argument("--group-type", help="Moomoo watchlist group type")
+    parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+
+
+def _moomoo_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "base_url": args.base_url,
+        "host": args.host,
+        "port": args.port,
+        "market": args.market,
+        "group_type": args.group_type,
+        "timeout": args.timeout,
+    }
 
 
 def recent_refresh_runs(*, limit: int = 5) -> list[dict[str, Any]]:
@@ -195,6 +234,37 @@ def format_quality_report(summary: dict) -> str:
         if extra > 0:
             lines.append(f"  ... {extra} more")
 
+    return "\n".join(lines)
+
+
+def format_moomoo_sync_report(result: dict[str, Any], *, preview: bool) -> str:
+    """Format moomoo preview/sync output for compact CLI use."""
+
+    action = "Moomoo preview" if preview else "Moomoo sync"
+    lines = [
+        f"{action}: {result.get('status', 'unknown')}",
+        (
+            f"mapped={result.get('mapped_count', 0)} | "
+            f"unsupported={result.get('unsupported_count', 0)} | "
+            f"invalid={result.get('invalid_count', 0)} | "
+            f"groups={result.get('group_count', 0)} | "
+            f"tickers={result.get('ticker_count', 0)}"
+        ),
+    ]
+    if not preview:
+        lines.append(
+            f"universe={result.get('universe_path', 'n/a')} | "
+            f"firn_synced={result.get('firn_synced', False)}"
+        )
+    groups = result.get("groups") or {}
+    for group, tickers in groups.items():
+        shown = ", ".join(str(ticker) for ticker in list(tickers)[:8])
+        extra = len(tickers) - min(len(tickers), 8)
+        suffix = f", +{extra}" if extra > 0 else ""
+        lines.append(f"- {group}: {len(tickers)} [{shown}{suffix}]")
+    skipped = result.get("skipped_items") or []
+    if skipped:
+        lines.append(f"skipped_items={len(skipped)}")
     return "\n".join(lines)
 
 
