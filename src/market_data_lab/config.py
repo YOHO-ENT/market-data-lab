@@ -27,12 +27,21 @@ def _env_flag(name: str, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _env_path(name: str) -> Path | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return Path(value).expanduser()
+
+
 MOOMOO_ACCOUNT_WEB_URL = os.getenv("MOOMOO_ACCOUNT_WEB_URL", "http://127.0.0.1:8501")
 MOOMOO_EXPORT_HOST = os.getenv("MOOMOO_EXPORT_HOST", "127.0.0.1")
 MOOMOO_EXPORT_PORT = int(os.getenv("MOOMOO_EXPORT_PORT", "11111"))
 MOOMOO_EXPORT_MARKET = os.getenv("MOOMOO_EXPORT_MARKET", "US")
 MOOMOO_EXPORT_GROUP_TYPE = os.getenv("MOOMOO_EXPORT_GROUP_TYPE", "CUSTOM")
 MARKET_DATA_UNIVERSE_EDITABLE = _env_flag("MARKET_DATA_UNIVERSE_EDITABLE", False)
+FIRN_WATCHLIST_PATH = _env_path("FIRN_WATCHLIST_PATH")
 
 SUPPORTED_CHART_RANGES: dict[str, int] = {
     "6mo": 126,

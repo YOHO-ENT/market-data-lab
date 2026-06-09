@@ -28,12 +28,11 @@ from typing import Any
 
 import yaml
 
-from market_data_lab.config import PROJECT_ROOT, UNIVERSE_PATH
+from market_data_lab.config import FIRN_WATCHLIST_PATH, UNIVERSE_PATH
 from market_data_lab.models import normalize_ticker, normalize_tickers
 
-REPO_ROOT = PROJECT_ROOT.parent
 DEFAULT_UNIVERSE_PATH = UNIVERSE_PATH
-DEFAULT_FIRN_WATCHLIST_PATH = REPO_ROOT / "global-market-agent" / "config" / "digest_watchlist.yaml"
+DEFAULT_FIRN_WATCHLIST_PATH = FIRN_WATCHLIST_PATH
 
 _GROUP_RE = re.compile(r"[^a-z0-9_]+")
 
@@ -42,7 +41,7 @@ def sync_configs(
     *,
     prefer: str = "universe",
     universe_path: Path = DEFAULT_UNIVERSE_PATH,
-    watchlist_path: Path = DEFAULT_FIRN_WATCHLIST_PATH,
+    watchlist_path: Path | None = DEFAULT_FIRN_WATCHLIST_PATH,
 ) -> str:
     """Synchronize Lab universe to Firn watchlist and return ``"universe"``.
 
@@ -52,22 +51,26 @@ def sync_configs(
     """
 
     universe_path = Path(universe_path)
-    watchlist_path = Path(watchlist_path)
     if prefer != "universe":
         raise ValueError("Market Data Lab only supports universe -> Firn watchlist sync")
     if not universe_path.exists():
         return "none"
+    if watchlist_path is None:
+        return "none"
+    watchlist_path = Path(watchlist_path)
     sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=watchlist_path)
     return "universe"
 
 
 def sync_watchlist_to_universe(
     *,
-    watchlist_path: Path = DEFAULT_FIRN_WATCHLIST_PATH,
+    watchlist_path: Path | None = DEFAULT_FIRN_WATCHLIST_PATH,
     universe_path: Path = DEFAULT_UNIVERSE_PATH,
 ) -> None:
     """Legacy converter kept for tests/tools; runtime sync must not call this."""
 
+    if watchlist_path is None:
+        raise ValueError("FIRN_WATCHLIST_PATH is required for watchlist -> universe conversion")
     payload = _load_yaml(Path(watchlist_path))
     categories = normalize_watchlist_categories(payload.get("categories") or payload)
     groups: dict[str, list[str]] = {}
@@ -89,8 +92,10 @@ def sync_watchlist_to_universe(
 def sync_universe_to_watchlist(
     *,
     universe_path: Path = DEFAULT_UNIVERSE_PATH,
-    watchlist_path: Path = DEFAULT_FIRN_WATCHLIST_PATH,
+    watchlist_path: Path | None = DEFAULT_FIRN_WATCHLIST_PATH,
 ) -> None:
+    if watchlist_path is None:
+        raise ValueError("FIRN_WATCHLIST_PATH is required for universe -> watchlist sync")
     universe = _load_yaml(Path(universe_path))
     groups = universe.get("groups") or {}
     group_meta = universe.get("group_meta") or {}

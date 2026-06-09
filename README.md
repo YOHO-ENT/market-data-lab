@@ -14,28 +14,45 @@ Standalone local market data cache, technical snapshot, screen, and chart data s
 
 Hard boundaries:
 
-- no Firn adapter, Firn integration, or Firn write-back
+- no Firn imports or in-process coupling
 - no KB reads or writes
 - no LLM workflows
 - no backtest or backtesting engine
 - no trading, execution, broker, or portfolio operations
 - no news, digest, or Telegram pipeline
 
+Optional integration:
+
+- `moomoo-sync` can write a Firn watchlist file only when
+  `FIRN_WATCHLIST_PATH` is explicitly set or `--sync-firn` is used with that
+  path configured.
+- Without `FIRN_WATCHLIST_PATH`, Market Data Lab updates only its local
+  `config/universe.yaml`.
+
 ## Daily Flow
 
 From this directory:
 
 ```bash
+uv run market-data moomoo-sync
 ./scripts/refresh_daily.sh
 ./scripts/dev.sh
 ```
 
 The daily workflow is:
 
-1. Review configured universes with `/universes` or the status `groups` payload.
-2. Refresh the local daily OHLCV cache.
-3. Review the latest refresh metadata with `/runs` or `market-data runs`.
-4. Use `/screen` and the UI for the current local technical screen.
+1. Start Moomoo Account Web at `http://127.0.0.1:8501`.
+2. Sync the Moomoo research universe into local `config/universe.yaml`.
+3. Refresh the local daily OHLCV cache.
+4. Review the latest refresh metadata with `/runs` or `market-data runs`.
+5. Use `/screen` and the UI for the current local technical screen.
+
+To also write Firn's local watchlist copy during sync:
+
+```bash
+FIRN_WATCHLIST_PATH=/Users/yongnahwa/Desktop/Firn/global-market-agent/config/digest_watchlist.yaml \
+uv run market-data moomoo-sync
+```
 
 Open the UI at:
 
@@ -46,6 +63,7 @@ http://127.0.0.1:3020
 `refresh_daily.sh` runs the full daily data workflow:
 
 ```bash
+uv run market-data moomoo-sync
 uv run market-data refresh --all --period 5y
 uv run market-data runs --limit 1
 uv run market-data status --verbose
@@ -107,6 +125,9 @@ uv run market-data quality
 uv run market-data runs --limit 5
 uv run market-data refresh AAPL BSX --period 5y
 uv run market-data refresh --all --period 5y
+uv run market-data moomoo-preview
+uv run market-data moomoo-sync
+FIRN_WATCHLIST_PATH=/path/to/digest_watchlist.yaml uv run market-data moomoo-sync --sync-firn
 uv run market-data snapshot BSX
 uv run market-data chart BSX --range 1y
 ```
@@ -123,4 +144,6 @@ GET  /history/{ticker}
 GET  /snapshot/{ticker}
 GET  /chart/{ticker}?range=6mo|1y|2y|5y
 POST /snapshots/refresh
+GET  /integrations/moomoo/research-universe/preview
+POST /integrations/moomoo/research-universe/sync
 ```

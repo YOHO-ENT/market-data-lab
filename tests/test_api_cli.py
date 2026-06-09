@@ -629,6 +629,27 @@ def test_moomoo_sync_error_does_not_write_configs(monkeypatch: pytest.MonkeyPatc
     assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
 
 
+def test_moomoo_sync_requires_firn_path_before_writing_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    universe_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", None)
+    monkeypatch.setattr(
+        services,
+        "preview_research_universe",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("moomoo should not be called")),
+    )
+
+    with pytest.raises(ValueError, match="FIRN_WATCHLIST_PATH"):
+        services.sync_moomoo_research_universe(sync_firn=True)
+
+    assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
+
+
 def test_refresh_api_writes_lists_and_gets_run_logs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

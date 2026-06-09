@@ -42,7 +42,7 @@ class UniverseTickersRequest(BaseModel):
 
 
 class MoomooSyncRequest(BaseModel):
-    sync_firn: bool = True
+    sync_firn: bool | None = None
     base_url: str | None = None
     host: str | None = None
     port: int | None = None

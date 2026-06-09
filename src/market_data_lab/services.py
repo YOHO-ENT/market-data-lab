@@ -17,7 +17,6 @@ from market_data_lab.config import (
     DEFAULT_BENCHMARK,
     DEFAULT_PERIOD,
     MARKET_DATA_UNIVERSE_EDITABLE,
-    PROJECT_ROOT,
     REFRESH_RUN_DIR,
     SNAPSHOT_DIR,
     STALE_PRICE_MAX_AGE_DAYS,
@@ -615,10 +614,18 @@ def preview_moomoo_research_universe(**kwargs: Any) -> dict[str, Any]:
 
 def sync_moomoo_research_universe(
     *,
-    sync_firn: bool = True,
+    sync_firn: bool | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Replace Lab universe from moomoo export and optionally push it to Firn."""
+    """Replace Lab universe from moomoo export and optionally push it to Firn.
+
+    In the standalone project, Firn writes are opt-in: set
+    ``FIRN_WATCHLIST_PATH`` or pass ``sync_firn=True`` with a configured path.
+    """
+
+    should_sync_firn = DEFAULT_FIRN_WATCHLIST_PATH is not None if sync_firn is None else sync_firn
+    if should_sync_firn and DEFAULT_FIRN_WATCHLIST_PATH is None:
+        raise ValueError("FIRN_WATCHLIST_PATH is required when sync_firn is enabled")
 
     preview = preview_research_universe(**_clean_moomoo_kwargs(kwargs))
     groups = preview.get("groups") or {}
@@ -645,7 +652,7 @@ def sync_moomoo_research_universe(
     _write_universe_config(config)
 
     firn_synced = False
-    if sync_firn:
+    if should_sync_firn:
         _sync_universe_configs()
         firn_synced = True
 
@@ -746,15 +753,11 @@ def _normalized_group_meta(
 
 
 def _sync_universe_configs() -> None:
-    """Sync Lab universe to Firn when operating on the real monorepo config files."""
+    """Sync Lab universe to Firn when a Firn watchlist path is configured."""
 
     universe_path = Path(UNIVERSE_PATH)
     firn_path = DEFAULT_FIRN_WATCHLIST_PATH
-    real_universe_path = PROJECT_ROOT / "config" / "universe.yaml"
-    real_firn_path = PROJECT_ROOT.parent / "global-market-agent" / "config" / "digest_watchlist.yaml"
-    # Isolated tests monkeypatch only UNIVERSE_PATH; do not mutate the real
-    # Firn watchlist unless both sides are explicitly pointed at temp files.
-    if universe_path.resolve() != real_universe_path.resolve() and firn_path.resolve() == real_firn_path.resolve():
+    if firn_path is None:
         return
     if not universe_path.exists() and not firn_path.exists():
         return

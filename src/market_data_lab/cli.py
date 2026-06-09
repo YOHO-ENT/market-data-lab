@@ -64,7 +64,19 @@ def main() -> None:
 
     moomoo_sync = subparsers.add_parser("moomoo-sync", help="Replace Lab universe from moomoo export")
     _add_moomoo_args(moomoo_sync)
-    moomoo_sync.add_argument("--no-firn", action="store_true", help="Do not push the synced universe to Firn")
+    moomoo_sync.set_defaults(sync_firn=None)
+    moomoo_sync.add_argument(
+        "--sync-firn",
+        action="store_true",
+        dest="sync_firn",
+        help="Push the synced universe to FIRN_WATCHLIST_PATH",
+    )
+    moomoo_sync.add_argument(
+        "--no-firn",
+        action="store_false",
+        dest="sync_firn",
+        help="Do not push the synced universe to Firn",
+    )
 
     args = parser.parse_args()
 
@@ -113,7 +125,7 @@ def main() -> None:
         return
 
     if args.command == "moomoo-sync":
-        result = sync_moomoo_research_universe(sync_firn=not args.no_firn, **_moomoo_kwargs(args))
+        result = sync_moomoo_research_universe(sync_firn=args.sync_firn, **_moomoo_kwargs(args))
         print(format_moomoo_sync_report(result, preview=False))
         return
 
