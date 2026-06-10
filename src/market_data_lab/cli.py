@@ -69,7 +69,7 @@ def main() -> None:
         "--sync-firn",
         action="store_true",
         dest="sync_firn",
-        help="Push the synced universe to FIRN_WATCHLIST_PATH",
+        help="Push the synced universe to Firn over FIRN_API_BASE_URL or FIRN_WATCHLIST_PATH",
     )
     moomoo_sync.add_argument(
         "--no-firn",
@@ -266,8 +266,12 @@ def format_moomoo_sync_report(result: dict[str, Any], *, preview: bool) -> str:
     if not preview:
         lines.append(
             f"universe={result.get('universe_path', 'n/a')} | "
-            f"firn_synced={result.get('firn_synced', False)}"
+            f"firn_synced={result.get('firn_synced', False)} | "
+            f"firn_sync_mode={result.get('firn_sync_mode', 'unknown')} | "
+            f"firn_sync_status={result.get('firn_sync_status', 'unknown')}"
         )
+        if result.get("firn_error"):
+            lines.append(f"firn_error={result['firn_error']}")
     groups = result.get("groups") or {}
     for group, tickers in groups.items():
         shown = ", ".join(str(ticker) for ticker in list(tickers)[:8])

@@ -35,6 +35,13 @@ def _env_path(name: str) -> Path | None:
     return Path(value).expanduser()
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return float(value)
+
+
 MOOMOO_ACCOUNT_WEB_URL = os.getenv("MOOMOO_ACCOUNT_WEB_URL", "http://127.0.0.1:8501")
 MOOMOO_EXPORT_HOST = os.getenv("MOOMOO_EXPORT_HOST", "127.0.0.1")
 MOOMOO_EXPORT_PORT = int(os.getenv("MOOMOO_EXPORT_PORT", "11111"))
@@ -42,6 +49,9 @@ MOOMOO_EXPORT_MARKET = os.getenv("MOOMOO_EXPORT_MARKET", "US")
 MOOMOO_EXPORT_GROUP_TYPE = os.getenv("MOOMOO_EXPORT_GROUP_TYPE", "CUSTOM")
 MARKET_DATA_UNIVERSE_EDITABLE = _env_flag("MARKET_DATA_UNIVERSE_EDITABLE", False)
 FIRN_WATCHLIST_PATH = _env_path("FIRN_WATCHLIST_PATH")
+FIRN_API_BASE_URL = os.getenv("FIRN_API_BASE_URL", "").strip().rstrip("/") or None
+FIRN_API_TOKEN = os.getenv("FIRN_API_TOKEN", "").strip() or None
+FIRN_API_TIMEOUT_SECONDS = _env_float("FIRN_API_TIMEOUT_SECONDS", 10.0)
 
 SUPPORTED_CHART_RANGES: dict[str, int] = {
     "6mo": 126,

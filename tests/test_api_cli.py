@@ -11,10 +11,18 @@ from fastapi.testclient import TestClient
 
 from market_data_lab import cli, services
 from market_data_lab.api.app import app
+from market_data_lab.firn_integration import FirnSyncError
 from market_data_lab.models import RefreshResponse, RefreshTickerResult
 from market_data_lab.storage import ParquetPriceStore
 from market_data_lab.moomoo_integration import build_universe_from_export
 from market_data_lab.watchlist_sync import sync_configs
+
+
+@pytest.fixture(autouse=True)
+def clear_firn_http_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_BASE_URL", None)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_TOKEN", None)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_TIMEOUT_SECONDS", 10.0)
 
 
 def standard_frame(dates: list[str], closes: list[float] | None = None) -> pd.DataFrame:
@@ -595,6 +603,8 @@ def test_moomoo_sync_replaces_lab_universe_and_pushes_firn(
     saved = yaml.safe_load(universe_path.read_text(encoding="utf-8"))
     assert result["synced"] is True
     assert result["firn_synced"] is True
+    assert result["firn_sync_mode"] == "file"
+    assert result["firn_sync_status"] == "ok"
     assert set(saved["groups"]) == {
         "moomoo_positions",
         "moomoo_watchlist_ai_watch",
@@ -605,6 +615,102 @@ def test_moomoo_sync_replaces_lab_universe_and_pushes_firn(
     watchlist = yaml.safe_load(firn_path.read_text(encoding="utf-8"))
     assert "moomoo_all" not in watchlist["categories"]
     assert watchlist["categories"]["moomoo_positions"]["tickers"] == ["NVDA"]
+
+
+def test_moomoo_sync_prefers_firn_http_over_file_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_put_watchlist(**kwargs):
+        captured.update(kwargs)
+        return {"status": "ok", "editable": True}
+
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_TOKEN", "secret-token")
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_TIMEOUT_SECONDS", 2.5)
+    monkeypatch.setattr(services, "put_watchlist", fake_put_watchlist)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+
+    result = services.sync_moomoo_research_universe()
+
+    assert result["firn_synced"] is True
+    assert result["firn_sync_mode"] == "http"
+    assert result["firn_sync_status"] == "ok"
+    assert result["firn_endpoint"] == "http://127.0.0.1:8000/api/config/watchlist"
+    assert captured["base_url"] == "http://127.0.0.1:8000"
+    assert captured["token"] == "secret-token"
+    assert captured["timeout"] == 2.5
+    categories = captured["categories"]
+    assert isinstance(categories, dict)
+    assert categories["moomoo_watchlist_ai_watch"]["tickers"] == ["0700.HK", "NVDA"]
+    assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
+
+
+def test_moomoo_sync_reports_firn_http_disabled_without_file_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    firn_path = tmp_path / "global-market-agent" / "config" / "digest_watchlist.yaml"
+    universe_path.parent.mkdir(parents=True)
+    firn_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+    firn_path.write_text(yaml.safe_dump({"categories": {"old": {"tickers": ["OLD"]}}}), encoding="utf-8")
+
+    def fail_put_watchlist(**_kwargs):
+        raise FirnSyncError("Firn watchlist sync failed with HTTP 403: disabled", status_code=403)
+
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_WATCHLIST_PATH", firn_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setattr(services, "put_watchlist", fail_put_watchlist)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+
+    result = services.sync_moomoo_research_universe(sync_firn=True)
+
+    assert result["synced"] is True
+    assert result["firn_synced"] is False
+    assert result["firn_sync_mode"] == "http"
+    assert result["firn_sync_status"] == "failed"
+    assert result["firn_status_code"] == 403
+    assert "disabled" in result["firn_error"]
+    saved_groups = yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"]
+    assert saved_groups["moomoo_positions"] == ["NVDA"]
+    assert yaml.safe_load(firn_path.read_text(encoding="utf-8"))["categories"]["old"]["tickers"] == ["OLD"]
+
+
+def test_moomoo_sync_reports_firn_http_5xx(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    universe_path = tmp_path / "config" / "universe.yaml"
+    universe_path.parent.mkdir(parents=True)
+    universe_path.write_text(yaml.safe_dump({"groups": {"old": ["OLD"]}}), encoding="utf-8")
+
+    def fail_put_watchlist(**_kwargs):
+        raise FirnSyncError("Firn watchlist sync failed with HTTP 500: down", status_code=500)
+
+    monkeypatch.setattr(services, "UNIVERSE_PATH", universe_path)
+    monkeypatch.setattr(services, "DEFAULT_FIRN_API_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setattr(services, "put_watchlist", fail_put_watchlist)
+    monkeypatch.setattr(services, "preview_research_universe", lambda **kwargs: build_universe_from_export(moomoo_export_payload()))
+
+    result = services.sync_moomoo_research_universe(sync_firn=True)
+
+    assert result["firn_synced"] is False
+    assert result["firn_sync_status"] == "failed"
+    assert result["firn_status_code"] == 500
+    assert "down" in result["firn_error"]
 
 
 def test_moomoo_sync_error_does_not_write_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -644,7 +750,7 @@ def test_moomoo_sync_requires_firn_path_before_writing_when_enabled(
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("moomoo should not be called")),
     )
 
-    with pytest.raises(ValueError, match="FIRN_WATCHLIST_PATH"):
+    with pytest.raises(ValueError, match="FIRN_API_BASE_URL or FIRN_WATCHLIST_PATH"):
         services.sync_moomoo_research_universe(sync_firn=True)
 
     assert yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"] == {"old": ["OLD"]}
@@ -791,6 +897,8 @@ def test_moomoo_api_preview_and_sync(
     assert response.status_code == 200
     data = response.json()
     assert data["firn_synced"] is True
+    assert data["firn_sync_mode"] == "file"
+    assert data["firn_sync_status"] == "ok"
     saved_groups = yaml.safe_load(universe_path.read_text(encoding="utf-8"))["groups"]
     assert "moomoo_all" not in saved_groups
     assert saved_groups["moomoo_watchlist_ai_watch"] == ["0700.HK", "NVDA"]

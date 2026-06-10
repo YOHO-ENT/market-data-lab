@@ -16,6 +16,9 @@ import yaml
 from market_data_lab.config import (
     DEFAULT_BENCHMARK,
     DEFAULT_PERIOD,
+    FIRN_API_BASE_URL,
+    FIRN_API_TIMEOUT_SECONDS,
+    FIRN_API_TOKEN,
     MARKET_DATA_UNIVERSE_EDITABLE,
     REFRESH_RUN_DIR,
     SNAPSHOT_DIR,
@@ -23,6 +26,7 @@ from market_data_lab.config import (
     UNIVERSE_PATH,
     ensure_data_dirs,
 )
+from market_data_lab.firn_integration import FirnSyncError, put_watchlist, watchlist_endpoint
 from market_data_lab.models import (
     HistoryResponse,
     RefreshResponse,
@@ -36,6 +40,7 @@ from market_data_lab.watchlist_sync import (
     DEFAULT_FIRN_WATCHLIST_PATH,
     DEFAULT_UNIVERSE_PATH,
     sync_universe_to_watchlist,
+    universe_to_watchlist_categories,
 )
 
 QUALITY_TYPES = (
@@ -85,6 +90,9 @@ DEFAULT_SCREEN_VIEWS = [
         },
     },
 ]
+DEFAULT_FIRN_API_BASE_URL = FIRN_API_BASE_URL
+DEFAULT_FIRN_API_TOKEN = FIRN_API_TOKEN
+DEFAULT_FIRN_API_TIMEOUT_SECONDS = FIRN_API_TIMEOUT_SECONDS
 
 
 def refresh_history(
@@ -620,12 +628,15 @@ def sync_moomoo_research_universe(
     """Replace Lab universe from moomoo export and optionally push it to Firn.
 
     In the standalone project, Firn writes are opt-in: set
-    ``FIRN_WATCHLIST_PATH`` or pass ``sync_firn=True`` with a configured path.
+    ``FIRN_API_BASE_URL`` or ``FIRN_WATCHLIST_PATH``. HTTP is preferred when
+    both are configured; the file path is a transitional fallback.
     """
 
-    should_sync_firn = DEFAULT_FIRN_WATCHLIST_PATH is not None if sync_firn is None else sync_firn
-    if should_sync_firn and DEFAULT_FIRN_WATCHLIST_PATH is None:
-        raise ValueError("FIRN_WATCHLIST_PATH is required when sync_firn is enabled")
+    has_firn_http = DEFAULT_FIRN_API_BASE_URL is not None
+    has_firn_file = DEFAULT_FIRN_WATCHLIST_PATH is not None
+    should_sync_firn = has_firn_http or has_firn_file if sync_firn is None else sync_firn
+    if should_sync_firn and not has_firn_http and not has_firn_file:
+        raise ValueError("FIRN_API_BASE_URL or FIRN_WATCHLIST_PATH is required when sync_firn is enabled")
 
     preview = preview_research_universe(**_clean_moomoo_kwargs(kwargs))
     groups = preview.get("groups") or {}
@@ -651,10 +662,14 @@ def sync_moomoo_research_universe(
     }
     _write_universe_config(config)
 
-    firn_synced = False
+    firn_result = {
+        "firn_synced": False,
+        "firn_sync_mode": "disabled",
+        "firn_sync_status": "skipped",
+        "firn_watchlist_path": None,
+    }
     if should_sync_firn:
-        _sync_universe_configs()
-        firn_synced = True
+        firn_result = _sync_firn_from_universe_config()
 
     return _json_clean(
         {
@@ -662,8 +677,7 @@ def sync_moomoo_research_universe(
             "status": "ok",
             "synced": True,
             "universe_path": str(UNIVERSE_PATH),
-            "firn_synced": firn_synced,
-            "firn_watchlist_path": str(DEFAULT_FIRN_WATCHLIST_PATH) if firn_synced else None,
+            **firn_result,
         }
     )
 
@@ -762,6 +776,49 @@ def _sync_universe_configs() -> None:
     if not universe_path.exists() and not firn_path.exists():
         return
     sync_universe_to_watchlist(universe_path=universe_path, watchlist_path=firn_path)
+
+
+def _sync_firn_from_universe_config() -> dict[str, Any]:
+    """Sync the current Lab universe to Firn over HTTP or transitional file path."""
+
+    if DEFAULT_FIRN_API_BASE_URL is not None:
+        endpoint = watchlist_endpoint(DEFAULT_FIRN_API_BASE_URL)
+        categories = universe_to_watchlist_categories(_load_universe_config(required=True))
+        try:
+            response = put_watchlist(
+                base_url=DEFAULT_FIRN_API_BASE_URL,
+                categories=categories,
+                token=DEFAULT_FIRN_API_TOKEN,
+                timeout=DEFAULT_FIRN_API_TIMEOUT_SECONDS,
+            )
+        except FirnSyncError as exc:
+            return {
+                "firn_synced": False,
+                "firn_sync_mode": "http",
+                "firn_sync_status": "failed",
+                "firn_api_base_url": DEFAULT_FIRN_API_BASE_URL,
+                "firn_endpoint": endpoint,
+                "firn_status_code": exc.status_code,
+                "firn_error": str(exc),
+                "firn_watchlist_path": None,
+            }
+        return {
+            "firn_synced": True,
+            "firn_sync_mode": "http",
+            "firn_sync_status": "ok",
+            "firn_api_base_url": DEFAULT_FIRN_API_BASE_URL,
+            "firn_endpoint": endpoint,
+            "firn_response": response,
+            "firn_watchlist_path": None,
+        }
+
+    _sync_universe_configs()
+    return {
+        "firn_synced": True,
+        "firn_sync_mode": "file",
+        "firn_sync_status": "ok",
+        "firn_watchlist_path": str(DEFAULT_FIRN_WATCHLIST_PATH),
+    }
 
 
 def _ensure_universe_editable() -> None:

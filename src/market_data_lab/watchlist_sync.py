@@ -97,10 +97,23 @@ def sync_universe_to_watchlist(
     if watchlist_path is None:
         raise ValueError("FIRN_WATCHLIST_PATH is required for universe -> watchlist sync")
     universe = _load_yaml(Path(universe_path))
-    groups = universe.get("groups") or {}
-    group_meta = universe.get("group_meta") or {}
     existing = _load_yaml(Path(watchlist_path)) if Path(watchlist_path).exists() else {}
     existing_categories = existing.get("categories") or {}
+    categories = universe_to_watchlist_categories(universe, existing_categories=existing_categories)
+
+    _write_yaml(Path(watchlist_path), {"categories": categories})
+
+
+def universe_to_watchlist_categories(
+    universe: dict[str, Any],
+    *,
+    existing_categories: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Convert a Market Data Lab universe mapping to Firn watchlist categories."""
+
+    groups = universe.get("groups") or {}
+    group_meta = universe.get("group_meta") or {}
+    existing_categories = existing_categories or {}
 
     categories: dict[str, dict[str, Any]] = {}
     for raw_key, raw_tickers in groups.items():
@@ -112,8 +125,7 @@ def sync_universe_to_watchlist(
             "tags": _normalize_tags(meta.get("tags") or previous.get("tags"), key),
             "tickers": normalize_tickers(_ticker_values(raw_tickers)),
         }
-
-    _write_yaml(Path(watchlist_path), {"categories": categories})
+    return categories
 
 
 def normalize_watchlist_categories(categories: Any) -> dict[str, dict[str, Any]]:
