@@ -7,9 +7,11 @@ import "./shared/styles/tokens.css";
 import "./shared/styles/global.css";
 import "./features/market/styles/market.css";
 
+const basename = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <App />
     </BrowserRouter>
   </StrictMode>,

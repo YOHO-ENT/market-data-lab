@@ -4,8 +4,10 @@ import { resolve } from "node:path";
 
 const marketDataApiUrl =
   process.env.MARKET_DATA_API_URL || "http://127.0.0.1:8010";
+const basePath = process.env.VITE_BASE_PATH || "/";
 
 export default defineConfig({
+  base: basePath,
   plugins: [react()],
   resolve: {
     alias: {

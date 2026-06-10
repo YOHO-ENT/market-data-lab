@@ -43,6 +43,19 @@ const TICKER_LIST_FIELDS = ["tickers", "symbols", "members", "constituents"];
 const RUN_LIST_FIELDS = ["runs", "items", "data", "results", "refresh_runs"];
 const RUN_FAILURE_FIELDS = ["failures", "failed", "errors", "error_tickers"];
 const RUN_STALE_FIELDS = ["stale", "stale_tickers"];
+const API_BASE_URL = (import.meta.env.VITE_MARKET_DATA_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  if (!API_BASE_URL) {
+    return path;
+  }
+  const normalizedPath = path.startsWith("/api/")
+    ? path.slice("/api".length)
+    : path.startsWith("/")
+      ? path
+      : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -51,7 +64,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers: {
       ...Object.fromEntries(headers.entries()),
